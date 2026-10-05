@@ -39,6 +39,8 @@
     "capture:production:check": "node ./scripts/capture-production-check.mjs",
     "capture:production:test": "node --test ./scripts/capture-production-check.test.mjs",
     "deploy:preflight": "node ./scripts/deploy-preflight.mjs",
+    "deploy:config-check": "node ./scripts/check-deploy-config.mjs",
+    "config-check:test": "node --test ./scripts/check-deploy-config.test.mjs",
     "provision:remote": "node ./scripts/provision-cloudflare.mjs",
     "provision:test": "node --test ./scripts/provision-cloudflare.test.mjs",
     "secrets:sync": "node ./scripts/sync-worker-secrets.mjs",
@@ -58,7 +60,7 @@
     "deploy:dry-run": "pnpm --filter @flaremo/web build && wrangler deploy --config ./wrangler.jsonc --dry-run",
     "startup-graph": "node scripts/startup-graph.mjs",
     "deploy:dry-run:site": "pnpm build:site && wrangler deploy --config ./apps/site/wrangler.jsonc --dry-run",
-    "deploy": "pnpm deploy:preflight && pnpm --filter @flaremo/web build && pnpm migrate:remote && pnpm --filter @flaremo/worker deploy",
+    "deploy": "pnpm deploy:preflight && pnpm deploy:config-check && pnpm --filter @flaremo/web build && pnpm migrate:remote && pnpm --filter @flaremo/worker deploy",
     "deploy:site": "pnpm build:site && wrangler deploy --config ./apps/site/wrangler.jsonc"
   },
   "cloudflare": {
