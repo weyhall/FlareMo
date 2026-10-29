@@ -43,6 +43,13 @@ export function useMemoMutations() {
       queryClient.invalidateQueries({ queryKey: ["memos"] }),
       queryClient.invalidateQueries({ queryKey: ["semantic-search"] }),
       queryClient.invalidateQueries({ queryKey: ["memo-stats"] }),
+      // The time-horizon day/week/month/year views read their own stats
+      // queries (60s staleTime); without these they would keep pre-mutation
+      // heat colors after a write.
+      queryClient.invalidateQueries({ queryKey: ["stats-hourly-day"] }),
+      queryClient.invalidateQueries({ queryKey: ["stats-hourly-month"] }),
+      queryClient.invalidateQueries({ queryKey: ["stats-hourly-week"] }),
+      queryClient.invalidateQueries({ queryKey: ["memo-stats-year"] }),
       queryClient.invalidateQueries({ queryKey: ["tag-hierarchy"] }),
       queryClient.invalidateQueries({ queryKey: ["memo-context"] }),
       queryClient.invalidateQueries({ queryKey: ["memo-related"] }),

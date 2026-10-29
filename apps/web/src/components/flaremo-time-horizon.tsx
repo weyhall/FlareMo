@@ -95,7 +95,12 @@ export const FlareMoTimeHorizon = memo(function FlareMoTimeHorizon({
   // the rest as zeroes (issue #144). The year view asks for the navigated
   // year's own window (until Dec 31); the counter read behind it scales with
   // active hours in the range, not memo count, so 2019 costs no more than
-  // today. Falls back to the shared array while it loads.
+  // today.
+  // While loading, only the current year may borrow the shared trailing array:
+  // for a historical year that array is anchored to today and would show the
+  // tail ~3 months with real data and the rest as zeroes — a misleading
+  // partial picture. Historical years render uniform "no records" colour
+  // instead, which is at least honest while the request resolves.
   const yearStatsQuery = useQuery({
     queryKey: ["memo-stats-year", space, timeZone, currentYear],
     queryFn: ({ signal }) =>
@@ -112,7 +117,8 @@ export const FlareMoTimeHorizon = memo(function FlareMoTimeHorizon({
   });
   const yearActivity =
     tab === "year"
-      ? (yearStatsQuery.data?.activity ?? stats.activity)
+      ? (yearStatsQuery.data?.activity ??
+        (currentYear === yearOf(today) ? stats.activity : []))
       : stats.activity;
 
   // Hourly query for Day view (24 hours)
@@ -366,6 +372,7 @@ export const FlareMoTimeHorizon = memo(function FlareMoTimeHorizon({
               locale={locale}
               monthKey={currentMonthKey}
               notesCountMap={notesCountMap}
+              preferHourlyHeat={space === undefined || space === "all"}
               selectedDay={selectedDay}
               today={today}
               weekStart={weekStart}

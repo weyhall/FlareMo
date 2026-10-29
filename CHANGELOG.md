@@ -2,6 +2,51 @@
 
 FlareMo 使用 SemVer。每个 release 都要写清楚升级影响、Cloudflare 资源变化和 Memos 兼容面变化。
 
+## v0.22.2
+
+可靠性补丁：修复移动端长 memo 编辑器打不开、标签解析误伤代码块（含标签改名/删除会写坏代码块的严重缺陷）、历史月份热力图颜色错误；对齐文档门禁描述并升级 Worker 运行时依赖。**无 migration、无新增 Cloudflare 资源、无 API 破坏性变化、无认证面配置变化。**
+
+### 修复
+
+- **移动端（触摸布局）长 memo 点「编辑」打不开**（issue #155）。根因是 `RichComposerEditor` 的 autoFocus effect 在挂载同一提交周期里同步 dispatch 焦点事务；移动布局 + 长内容时初始内容应用与焦点事务竞态，ProseMirror 抛 `RangeError: Applying a mismatched transaction`。现改为下一帧聚焦，并用 `editor.isDestroyed` + try/catch 兜住挂载期文档替换；抽成 `focusEditorOnNextFrame` helper 并补 5 个单测。
+- **代码块里的 `#xxx` 不再被当成标签**（issue #152）。保存期 `extractTags` 与 web composer 端的两份实现都改为跳过围栏代码块与行内代码；顺带修了标签改名/删除的两个既有缺陷——此前围栏分段是反的，**会改写代码块内容、反而漏改围栏前的正文**；行内代码段被提前 push 也会打乱片段顺序。补充围栏（``` / ~~~、info string、未闭合、多 fence、fence 前正文）与改名/删除回归测试。
+- **编辑器内标签高亮不再装饰代码**：代码块/行内代码里的 `#tag` 不再显示品牌色 chip（纯视觉，此前会误导用户以为被识别成标签）。
+- **历史月份热力图颜色错误**（issue #144 的收尾）。月视图改用「当月范围」的小时统计聚合着色，不再依赖 today 锚定的尾部窗口；当前年份加载中回退已加载的统计，历史年份保持诚实的空态；新建/编辑 memo 后日/周/月/年统计缓存一并失效。（采纳 #149 的思路，作者 @0Pluto，并补空间过滤、当年兜底、缓存失效三处遗漏）
+- **文档门禁描述对齐**：`llms.txt` 删除不存在的 `README.en.md` 链接、CI 时长改为约 14 分钟、全量门禁表述改为「只在维护者明确要求时本地执行」；修复 `docs/en` 两处死链。
+
+### 工程卫生
+
+- **worker 运行时依赖 hono 升级到 `^4.13.13`**，修 GHSA-5r4p-p66f-jhc7（`serveStatic` 二次解码；本项目未使用 `serveStatic`，但这是生产依赖里唯一的 moderate advisory）。
+- `.gitignore` 增加 `/wrangler.*.jsonc`：`wrangler.kosx.jsonc` / `wrangler.personal.jsonc` 含真实 account_id 与 D1 id，此前只靠本机 `.git/info/exclude` 忽略，换机克隆后 `git add -A` 有误提交风险。
+- 新增测试：标签代码块解析与改写回归（domain 23 例）、composer 标签一致性（web）、autoFocus helper（5 例）、月热力聚合纯函数（3 例）。
+
+### Memos 兼容面变化
+
+- 无 API 形状变化。`/api/v1` 的 memo `tags` 与 UI 同源；本版起代码块/行内代码内以 `#` 开头的词不再进入 `tags`（与「代码不是正文」的预期一致）。客户端在请求体显式传 `tags` 时仍以客户端值为准，解析规则不变。
+
+### 数据库 migration
+
+- 无。
+
+### Cloudflare 资源变化
+
+- 无新增或改名。部署前无需手动操作。
+
+### Better Auth 应用认证变化
+
+- 无破坏性变化。cookie session、bootstrap、注册开关、PAT 前缀与撤销行为、`FLAREMO_PUBLIC_URL` / `FLAREMO_TRUSTED_ORIGINS` 与各 secret 的配置要求均不变。
+
+### 升级步骤
+
+1. 直接部署即可（无 migration、无资源变化）。
+2. 存量 memo 中历史上从代码块提取出的错误 tags **不会自动回填**；如需清理需单独评估一次性脚本（只影响旧数据，新写入与再次编辑已正确）。
+
+### 已知问题
+
+- 团队空间过滤（`space≠all`）时月热力回退 `notesCountMap`（该接口无空间参数，覆盖最近 366 天），历史月份在该过滤下仍为空态——属已知取舍。
+- 编辑器内的标签自动补全（`tag-autocomplete`）尚未排除代码块上下文，纯输入期提示、不影响落库。
+- 兼容面仍未覆盖完整 CEL、完整上游 webhook 事件/egress 语义、完整多用户 ACL、原生 JWT parity，第三方客户端 smoke test 仍未完成。
+
 ## v0.22.1
 
 登录可靠性补丁版本：修复两处「登录/会话异常时界面静默卡死」的问题（由 2026-10-10 实例支持事件驱动），并滚动合入 v0.22.0 以来的站点、Worker 与工程卫生修复。**无 migration、无新增 Cloudflare 资源、无 API 破坏性变化、无认证面配置变化。**

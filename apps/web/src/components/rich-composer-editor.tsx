@@ -9,6 +9,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef } from "react";
 import { TagHighlight } from "@/components/tag-highlight-extension";
 import { UploadPlaceholder } from "@/components/upload-placeholder-extension";
+import { focusEditorOnNextFrame } from "@/lib/editor-autofocus";
 import { extractImageFiles } from "@/lib/image-insert";
 import { extractActiveTagToken } from "@/lib/tag-autocomplete";
 import { extractActiveWikiLinkToken } from "@/lib/wikilink-autocomplete";
@@ -304,7 +305,8 @@ export function RichComposerEditor({
   }, [editor, disabled]);
 
   useEffect(() => {
-    if (editor && autoFocus) editor.commands.focus("end");
+    if (!autoFocus) return;
+    return focusEditorOnNextFrame(editor);
   }, [editor, autoFocus]);
 
   // Upstream draft restores (queued capture replay, persisted draft) push

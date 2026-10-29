@@ -12,6 +12,30 @@ import { buildDayQuadrants } from "@/lib/time-horizon";
 import { cn } from "@/lib/utils";
 import type { DisplayMode } from "./shared";
 
+export type HourlyActivityRow = {
+  date: string;
+  hour: number;
+  count: number;
+};
+
+/**
+ * Sum month-scoped hourly rows into per-local-day totals.
+ *
+ * `getHourlyActivity` returns every hour of every day in the requested range
+ * (zero hours included), so summing by `date` yields the day total the heat
+ * grid needs without a second request. Exported so the aggregation can be
+ * unit-tested without rendering the view.
+ */
+export function aggregateHourlyDailyTotals(
+  hours: readonly HourlyActivityRow[] | undefined,
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const row of hours ?? []) {
+    totals.set(row.date, (totals.get(row.date) ?? 0) + row.count);
+  }
+  return totals;
+}
+
 export function MonthHorizonPureView({
   monthKey,
   today,
@@ -19,6 +43,7 @@ export function MonthHorizonPureView({
   locale,
   weekStart,
   notesCountMap,
+  preferHourlyHeat,
   hourlyData,
   isLoading: _isLoading,
   displayMode,
@@ -34,6 +59,12 @@ export function MonthHorizonPureView({
   locale: string;
   weekStart: WeekStart;
   notesCountMap: Map<string, number>;
+  /**
+   * Whether the hourly aggregation may drive the heat colors. False while a
+   * space partition is active, because the hourly endpoint is author-scoped
+   * and has no team partition to mirror the space-filtered stats.
+   */
+  preferHourlyHeat: boolean;
   hourlyData?: Array<{ date: string; hour: number; count: number }>;
   isLoading?: boolean;
   displayMode: DisplayMode;
@@ -53,6 +84,17 @@ export function MonthHorizonPureView({
   // Map daily quadrants (night, morning, afternoon, evening) for the hover stacked-stripes preview
   const dayQuadrants = useMemo(
     () => buildDayQuadrants(hourlyData ?? []),
+    [hourlyData],
+  );
+
+  // Aggregate daily totals from the month-scoped hourly query. This is the
+  // primary source because it's anchored to the exact month from/to via
+  // monthHourlyQuery, so historical months outside the shared stats' trailing
+  // 366-day window (which is anchored to "today" for streak/tags) still render
+  // correct heat colors. Fall back to notesCountMap only while the month
+  // query is still in flight.
+  const hourlyDailyTotals = useMemo(
+    () => aggregateHourlyDailyTotals(hourlyData),
     [hourlyData],
   );
 
@@ -90,7 +132,11 @@ export function MonthHorizonPureView({
             );
           }
 
-          const totalCount = notesCountMap.get(cell.key) ?? 0;
+          const totalCount = preferHourlyHeat
+            ? (hourlyDailyTotals.get(cell.key) ??
+              notesCountMap.get(cell.key) ??
+              0)
+            : (notesCountMap.get(cell.key) ?? 0);
           const isToday = cell.key === today;
           const isSelected = cell.key === selectedDay;
           const dayNum = Number(cell.key.slice(8));

@@ -54,16 +54,22 @@ export function normalizeMemoTags(values: string[]) {
  * Extract `#tag` tokens from memo content. Supports hierarchical tags using
  * `/` as the path separator (`#工作/项目A`). Stops at whitespace or
  * punctuation so `#tag，` still yields `tag`.
+ *
+ * Code is not prose: fenced code blocks and inline code spans are skipped, so
+ * a `#comment` or `#include` inside a snippet never becomes a tag (issue #152).
  */
 export function extractTags(content: string) {
   const tags = new Set<string>();
-  for (const match of content.matchAll(
-    /(^|[^\p{L}\p{N}_\-/])#([\p{L}\p{N}_\-/]+)/gu,
-  )) {
-    const raw = match[2];
-    if (!raw) continue;
-    const tag = normalizeTag(raw);
-    if (tag) tags.add(tag);
+  for (const { text, literal } of splitMarkdownLiteralSegments(content)) {
+    if (literal) continue;
+    for (const match of text.matchAll(
+      /(^|[^\p{L}\p{N}_\-/])#([\p{L}\p{N}_\-/]+)/gu,
+    )) {
+      const raw = match[2];
+      if (!raw) continue;
+      const tag = normalizeTag(raw);
+      if (tag) tags.add(tag);
+    }
   }
   return [...tags];
 }
@@ -494,6 +500,11 @@ export function removeTagFromContent(content: string, tag: string) {
 /**
  * Split content into segments, marking fenced code blocks, inline code spans,
  * and URLs as literal (untouched). Returns the pieces in order.
+ *
+ * Fence bookkeeping: prose before the opening fence stays ordinary so tags
+ * sitting right before a code block remain rewritable; the opening fence line,
+ * the code body, and the closing fence are all literal so samples are never
+ * rewritten or mined for tags. An unclosed fence runs literal to the end.
  */
 function splitMarkdownLiteralSegments(
   content: string,
@@ -504,31 +515,35 @@ function splitMarkdownLiteralSegments(
   };
   const lines = content.split(/(?<=\n)/);
   let inFence = false;
-  let fenceMarker = "";
+  let fenceChar = "";
+  let fenceLength = 0;
+  let code = "";
   let plain = "";
   for (const line of lines) {
-    const fenceMatch = inFence
-      ? line.match(/^\s*(~{3,}|`{3,})\s*$/)
-      : line.match(/^\s*(~{3,}|`{3,})/);
-    if (inFence && fenceMatch) {
-      // Closing fence of the same character run.
-      if (fenceMatch[1]?.[0] === fenceMarker[0]) {
-        plain += line;
-        pieces.push({ text: plain, literal: false });
-        plain = "";
+    if (inFence) {
+      code += line;
+      // Closing fence: same character, at least as long, nothing after it.
+      const marker = line.trimEnd().match(/^[ \t]*(~{3,}|`{3,})[ \t]*$/)?.[1];
+      if (marker && marker[0] === fenceChar && marker.length >= fenceLength) {
+        // The whole block — body, closing fence included — is literal.
+        push(code, true);
+        code = "";
         inFence = false;
-        fenceMarker = "";
-        continue;
+        fenceChar = "";
+        fenceLength = 0;
       }
-      plain += line;
       continue;
     }
-    if (!inFence && fenceMatch) {
-      plain += line;
-      pieces.push({ text: plain, literal: true });
+    const opening = line.match(/^[ \t]*(~{3,}|`{3,})/)?.[1];
+    if (opening) {
+      // Flush prose collected before the fence as ordinary text, then mark
+      // only the fence line itself (and everything after it) literal.
+      push(plain, false);
       plain = "";
+      push(line, true);
       inFence = true;
-      fenceMarker = fenceMatch[1] ?? "";
+      fenceChar = opening[0] ?? "";
+      fenceLength = opening.length;
       continue;
     }
     // Split inline code spans and URLs out of ordinary lines.
@@ -541,7 +556,11 @@ function splitMarkdownLiteralSegments(
         while (line[index + run] === "`") run += 1;
         const close = line.indexOf("`".repeat(run), index + run);
         if (close !== -1) {
+          // Flush the prose before the span first: pieces are concatenated in
+          // order, so a buffered `plain` must not overtake this literal.
           plain += line.slice(cursor, index);
+          push(plain, false);
+          plain = "";
           pieces.push({
             text: line.slice(index, close + run),
             literal: true,
@@ -560,6 +579,8 @@ function splitMarkdownLiteralSegments(
         let end = index;
         while (end < line.length && !/\s/.test(line[end] as string)) end += 1;
         plain += line.slice(cursor, index);
+        push(plain, false);
+        plain = "";
         pieces.push({ text: line.slice(index, end), literal: true });
         cursor = end;
         index = end;
@@ -569,7 +590,12 @@ function splitMarkdownLiteralSegments(
     }
     plain += line.slice(cursor);
   }
-  push(plain, false);
+  if (inFence) {
+    // An unclosed fence swallows everything up to the end of the content.
+    push(code, true);
+  } else {
+    push(plain, false);
+  }
   return pieces;
 }
 
