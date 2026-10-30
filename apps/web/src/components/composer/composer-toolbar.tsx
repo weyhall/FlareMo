@@ -1,56 +1,98 @@
 import type { Editor } from "@tiptap/react";
 import {
-  CalendarPlusIcon,
-  CheckSquareIcon,
+  BoldIcon,
+  FilePenLineIcon,
   HashIcon,
-  ImageIcon,
+  ImagePlusIcon,
   ListIcon,
   ListOrderedIcon,
-  Maximize2Icon,
+  ListTodoIcon,
   MicIcon,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useRef, useState } from "react";
+import { loadComposerFocusCanvas } from "@/components/composer/composer-focus-canvas-lazy";
+import { ComposerScheduleMenu } from "@/components/composer/composer-schedule-menu";
+import {
+  type ActiveFormats,
+  FORMAT_SHORTCUTS,
+  toggleFormat,
+} from "@/components/composer/format-actions";
+import { ToolButton, ToolDivider } from "@/components/composer/tool-button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n";
-import type { MemoCaptureInput } from "@/lib/local-memo-capture";
+import type { MemoSchedule } from "@/lib/memo-schedule";
+
+/** True while tools are cut off past the rail's trailing edge. RTL reports
+ * scrollLeft from 0 down to negative, so measure the distance. */
+function hasMoreToEnd(rail: HTMLElement) {
+  return Math.abs(rail.scrollLeft) + rail.clientWidth < rail.scrollWidth - 1;
+}
 
 /**
- * Formatting rail of the composer: tag, attachment picker, the three list
- * toggles, the date stamp, and the voice entry. It is the left half of the
- * composer's bottom bar, rendered next to the visibility menu and the round
- * send button. Every editor action goes through `withEditor`, which no-ops
- * while a submission is pending.
+ * The short-note rail. A note is plain prose with a little structure, so the
+ * rail stops at bold and lists: headings, quotes and code blocks are article
+ * tools, one click away behind "write long-form". Groups: insert (tag,
+ * image), shape (bold, bullets, numbers, to-dos), and plan (schedule, voice),
+ * then the way into the article canvas. It is the left half of the bottom
+ * bar, next to the visibility menu and send. Every editor action goes
+ * through `withEditor`, which no-ops while a submission is pending.
  */
 export function ComposerToolbar({
-  draft,
+  activeFormats,
   isPending,
   voiceActive,
   captureAvailable,
   withEditor,
-  onDraftChange,
+  onAddFiles,
   onStartVoice,
   onExpand,
+  schedule,
+  onScheduleChange,
 }: {
-  draft: MemoCaptureInput;
+  /** Formats active at the selection, mirrored on every transaction. */
+  activeFormats: ActiveFormats;
   isPending: boolean;
   voiceActive: boolean;
   captureAvailable: boolean;
   withEditor: (action: (editor: Editor) => void) => void;
-  onDraftChange: (draft: MemoCaptureInput) => void;
+  /**
+   * Files picked through the attachment button. The caller appends them to
+   * its latest draft (not a render-time copy), so an inline upload landing in
+   * between is never overwritten.
+   */
+  onAddFiles: (files: File[]) => void;
   /** Starts a session; the caller owns the controller. */
   onStartVoice: () => void;
-  /** Opens fullscreen focus canvas. */
+  /** Opens the long-form (article) canvas. */
   onExpand?: () => void;
+  /** The draft's reminder day / project; see `MemoSchedule`. */
+  schedule?: MemoSchedule;
+  onScheduleChange: (schedule: MemoSchedule | undefined) => void;
 }) {
   const { t } = useI18n();
+  // Fade the trailing edge only while tools are actually cut off, so a wide
+  // composer never dims its last button.
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [hasMoreToRight, setHasMoreToRight] = useState(false);
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() =>
+      setHasMoreToRight(hasMoreToEnd(rail)),
+    );
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className="flex min-w-0 items-center gap-0.5 sm:gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5">
-      <Button
-        aria-label={t("composer.addTag")}
+    <div
+      className="flex min-w-0 items-center gap-0.5 overflow-x-auto py-0.5 [scrollbar-width:none] data-[overflow=true]:[mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)] rtl:data-[overflow=true]:[mask-image:linear-gradient(to_left,black_calc(100%-20px),transparent)] [&::-webkit-scrollbar]:hidden"
+      data-overflow={hasMoreToRight ? "true" : undefined}
+      onScroll={(event) => setHasMoreToRight(hasMoreToEnd(event.currentTarget))}
+      ref={railRef}
+    >
+      <ToolButton
         disabled={isPending}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
+        label={t("composer.addTag")}
         onClick={() =>
           withEditor((editor) => {
             editor
@@ -62,43 +104,47 @@ export function ComposerToolbar({
         }
       >
         <HashIcon />
-      </Button>
-      <Button
+      </ToolButton>
+      <ToolButton
+        disabled={isPending}
+        label={t("composer.addAttachment")}
         render={
           <label
             aria-label={t("composer.addAttachment")}
             htmlFor="flaremo-attachment-input"
           />
         }
-        disabled={isPending}
-        size="icon-sm"
-        variant="ghost"
       >
-        <ImageIcon />
+        <ImagePlusIcon />
         <Input
           className="hidden"
+          disabled={isPending}
           id="flaremo-attachment-input"
           multiple
           type="file"
-          disabled={isPending}
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             event.target.value = "";
             if (files.length === 0) return;
-            onDraftChange({
-              ...draft,
-              files: [...draft.files, ...files],
-            });
+            onAddFiles(files);
           }}
         />
-      </Button>
-      <div className="hidden h-4 w-px bg-border sm:block" />
-      <Button
-        aria-label={t("composer.bulletList")}
+      </ToolButton>
+      <ToolDivider className="hidden sm:block" />
+      <ToolButton
+        active={activeFormats.bold}
         disabled={isPending}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
+        label={t("article.toolBold")}
+        shortcut={FORMAT_SHORTCUTS.bold}
+        // Keep the editor's selection (and its bubble menu) while clicking.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => withEditor((editor) => toggleFormat(editor, "bold"))}
+      >
+        <BoldIcon />
+      </ToolButton>
+      <ToolButton
+        disabled={isPending}
+        label={t("composer.bulletList")}
         onClick={() =>
           withEditor((editor) => {
             editor.chain().focus().toggleBulletList().run();
@@ -106,13 +152,10 @@ export function ComposerToolbar({
         }
       >
         <ListIcon />
-      </Button>
-      <Button
-        aria-label={t("composer.orderedList")}
+      </ToolButton>
+      <ToolButton
         disabled={isPending}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
+        label={t("composer.orderedList")}
         onClick={() =>
           withEditor((editor) => {
             editor.chain().focus().toggleOrderedList().run();
@@ -120,70 +163,51 @@ export function ComposerToolbar({
         }
       >
         <ListOrderedIcon />
-      </Button>
-      <Button
-        aria-label={t("composer.taskList")}
+      </ToolButton>
+      <ToolButton
         disabled={isPending}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
+        label={t("composer.taskList")}
         onClick={() =>
           withEditor((editor) => {
             editor.chain().focus().toggleTaskList().run();
           })
         }
       >
-        <CheckSquareIcon />
-      </Button>
-      <Button
-        aria-label={t("composer.insertDate")}
+        <ListTodoIcon />
+      </ToolButton>
+      <ToolDivider className="hidden sm:block" />
+      <ComposerScheduleMenu
         disabled={isPending}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
-        onClick={() =>
-          withEditor((editor) => {
-            const today = new Date().toISOString().slice(0, 10);
-            editor.chain().focus().insertContent(`${today} `).run();
-          })
-        }
-        title={t("composer.insertDate")}
-      >
-        <CalendarPlusIcon />
-      </Button>
+        schedule={schedule}
+        onScheduleChange={onScheduleChange}
+      />
       {captureAvailable && (
-        <Button
-          aria-label={t("composer.voice")}
-          className={voiceActive ? "text-brand-600" : undefined}
+        <ToolButton
+          active={voiceActive}
           disabled={isPending}
-          size="icon-sm"
-          type="button"
-          variant="ghost"
+          label={t("composer.voice")}
           onClick={() => {
             if (voiceActive) return;
             onStartVoice();
           }}
         >
           <MicIcon />
-        </Button>
+        </ToolButton>
       )}
       {onExpand && (
-        <Button
-          aria-label={t("composer.fullscreen.open")}
-          disabled={isPending}
-          size="icon-sm"
-          type="button"
-          variant="ghost"
-          onClick={onExpand}
-          onMouseEnter={() => {
-            void import(
-              "@/components/composer/composer-focus-canvas-lazy"
-            ).then((m) => m.loadComposerFocusCanvas());
-          }}
-          title={t("composer.fullscreen.open")}
-        >
-          <Maximize2Icon />
-        </Button>
+        <>
+          <ToolDivider className="hidden sm:block" />
+          <ToolButton
+            disabled={isPending}
+            label={t("composer.longform")}
+            onClick={onExpand}
+            onMouseEnter={() => {
+              void loadComposerFocusCanvas();
+            }}
+          >
+            <FilePenLineIcon />
+          </ToolButton>
+        </>
       )}
     </div>
   );

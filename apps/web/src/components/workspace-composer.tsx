@@ -1,4 +1,5 @@
 import type { MemoVisibility } from "@flaremo/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -20,11 +21,13 @@ import {
   isMemoCaptureEmpty,
   type MemoCaptureInput,
 } from "@/lib/local-memo-capture";
+import { fileScheduledTasks } from "@/lib/memo-schedule";
 import {
   shouldContinueQueuedSubmissionAfterFailure,
   shouldQueueAfterFailure,
   validateMemoCaptureSubmission,
 } from "@/lib/memo-submission";
+import { queryKeys } from "@/lib/query-keys";
 import { stripResourceName } from "@/lib/utils";
 
 // The composer's send target defaults to the active space ("归属在创建时决定").
@@ -84,6 +87,34 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
   });
   const { createMemoAsync, isCreatingMemo, handleMutationError } =
     useMemoMutations();
+  const queryClient = useQueryClient();
+  // A scheduled memo files its to-dos as tasks once the memo exists. The
+  // memo is the durable part: a task failure is reported, never rolled back
+  // into a lost note. Returns the toast the send should show.
+  const createMemoAndSchedule = useCallback(
+    async (submission: MemoCaptureInput) => {
+      const memo = await createMemoAsync(submission);
+      if (!submission.schedule) return { memo, message: t("toast.saved") };
+      try {
+        const count = await fileScheduledTasks(
+          memo.name,
+          submission.content,
+          submission.schedule,
+        );
+        void queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+        void queryClient.invalidateQueries({ queryKey: ["projects"] });
+        return {
+          memo,
+          message:
+            count > 0 ? t("toast.scheduledTasks", { count }) : t("toast.saved"),
+        };
+      } catch {
+        toast.error(t("toast.scheduleFailed"));
+        return { memo, message: undefined };
+      }
+    },
+    [createMemoAsync, queryClient, t],
+  );
   const isQueueFlushing = useRef(false);
   const isQueueFlushPending = useRef(false);
   const isCaptureSubmitting = useRef(false);
@@ -121,7 +152,7 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
       do {
         isQueueFlushPending.current = false;
         const result = await flushQueuedMemoSubmissions(
-          (submission) => createMemoAsync(submission),
+          async (submission) => (await createMemoAndSchedule(submission)).memo,
           {
             shouldContinueAfterFailure:
               shouldContinueQueuedSubmissionAfterFailure,
@@ -139,7 +170,7 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
     } finally {
       isQueueFlushing.current = false;
     }
-  }, [createMemoAsync, t]);
+  }, [createMemoAndSchedule, t]);
 
   useEffect(() => {
     void flushQueuedCaptures();
@@ -194,9 +225,9 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
       }
 
       try {
-        await createMemoAsync(submission);
+        const { message } = await createMemoAndSchedule(submission);
         await capture.discardDraft();
-        toast.success(t("toast.saved"));
+        if (message) toast.success(message);
       } catch (error) {
         if (!shouldQueueAfterFailure(error)) {
           handleMutationError(error);

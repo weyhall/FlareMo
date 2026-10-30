@@ -15,6 +15,7 @@ import remarkGfm from "remark-gfm";
 import { useI18n } from "@/i18n";
 import { createSlugger } from "@/lib/markdown-outline";
 import { memoTaskLines } from "@/lib/memo-tasks";
+import { mentionFromHref, remarkTags, tagFromHref } from "@/lib/remark-tags";
 import {
   isTimestampHref,
   parseTimestampHref,
@@ -107,10 +108,13 @@ export const MemoContent = memo(function MemoContent({
   resolveImageDimensions,
   onToggleTask,
   onConvertTask,
+  onTagClick,
   rehypePlugins,
 }: {
   className?: string;
   content: string;
+  /** Makes in-text `#tags` filter the timeline; without it they are inert. */
+  onTagClick?: (tag: string) => void;
   /**
    * Turns timestamp anchors into seek controls. Without it they stay inert,
    * which is what the timeline card wants.
@@ -173,6 +177,28 @@ export const MemoContent = memo(function MemoContent({
       <Markdown
         components={{
           a({ href, children, node: _node, ...props }) {
+            const mention = mentionFromHref(href);
+            if (mention !== null) {
+              return <span className="memo-mention">{children}</span>;
+            }
+            const tag = tagFromHref(href);
+            if (tag !== null) {
+              return onTagClick ? (
+                <button
+                  className="memo-tag"
+                  type="button"
+                  onClick={(event) => {
+                    // The card body is not a link; keep the click local.
+                    event.stopPropagation();
+                    onTagClick(tag);
+                  }}
+                >
+                  {children}
+                </button>
+              ) : (
+                <span className="memo-tag">{children}</span>
+              );
+            }
             const seconds = isTimestampHref(href)
               ? parseTimestampHref(href ?? "")
               : null;
@@ -313,7 +339,7 @@ export const MemoContent = memo(function MemoContent({
           },
         }}
         rehypePlugins={rehypePlugins}
-        remarkPlugins={[remarkGfm, remarkBreaks]}
+        remarkPlugins={[remarkGfm, remarkBreaks, remarkTags]}
         skipHtml
       >
         {body}

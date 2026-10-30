@@ -1,7 +1,7 @@
 {
   "name": "@flaremo/contracts",
   "license": "AGPL-3.0-only",
-  "version": "0.22.1",
+  "version": "0.23.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -11,9 +11,21 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./constants": {
+      "types": "./src/constants.ts",
+      "default": "./src/constants.ts"
+    },
     "./search-query": {
       "types": "./src/search-query.ts",
       "default": "./src/search-query.ts"
+    },
+    "./openapi": {
+      "types": "./src/openapi.ts",
+      "default": "./src/openapi.ts"
+    },
+    "./openapi-current": {
+      "types": "./src/openapi-current.ts",
+      "default": "./src/openapi-current.ts"
     }
   },
   "scripts": {
@@ -23,10 +35,11 @@
     "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },
   "dependencies": {
-    "zod": "^4.1.12"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
-  }
+    "vitest": "^4.1.12"
+  },
+  "sideEffects": false
 }

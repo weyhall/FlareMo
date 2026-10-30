@@ -114,13 +114,16 @@ export function UsersTable({
             onChange={(event) => setMemberSearch(event.target.value)}
           />
           {memberSearch && (
-            <button
+            <Button
               type="button"
+              aria-label={t("search.clear")}
               onClick={() => setMemberSearch("")}
-              className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
+              className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground"
+              size="icon-xs"
+              variant="ghost"
             >
               <XIcon className="size-3.5" />
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -178,27 +181,18 @@ export function UsersTable({
                 {/* Right: Role & Status & Actions */}
                 <div className="flex shrink-0 items-center gap-2">
                   {user.role === "owner" ? (
-                    <Badge
-                      variant="secondary"
-                      className="gap-1 border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium text-xs"
-                    >
+                    <Badge variant="warning" className="gap-1">
                       <CrownIcon className="size-3" />
                       <span>{t("admin.role.owner")}</span>
                     </Badge>
                   ) : user.role === "admin" ? (
-                    <Badge
-                      variant="secondary"
-                      className="gap-1 border-primary/20 bg-primary/10 text-primary font-medium text-xs"
-                    >
+                    <Badge variant="brand" className="gap-1">
                       <ShieldCheckIcon className="size-3" />
                       <span>{t("admin.role.admin")}</span>
                     </Badge>
                   ) : user.role === "reader" ? (
                     <div className="flex items-center gap-1.5">
-                      <Badge
-                        variant="secondary"
-                        className="gap-1 border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium text-xs"
-                      >
+                      <Badge variant="info" className="gap-1">
                         <EyeIcon className="size-3" />
                         <span>{t("admin.role.reader")}</span>
                       </Badge>

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2Icon, MicIcon } from "lucide-react";
+import { MicIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -9,6 +9,7 @@ import {
   testVoiceSettings,
   type VoiceSettings,
 } from "@/api";
+import { QueryErrorState } from "@/components/query-error-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/i18n";
@@ -204,6 +206,16 @@ export function VoicePanel() {
       </div>
     );
   }
+  // Without the stored settings the form would show defaults, so a failed
+  // load gets a retry instead of an editable-looking but wrong panel.
+  if (!config && settingsQuery.isError) {
+    return (
+      <QueryErrorState
+        isRetrying={settingsQuery.isFetching}
+        onRetry={() => void settingsQuery.refetch()}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -245,7 +257,7 @@ export function VoicePanel() {
           }
         />
         <SettingsRow
-          label={t("voiceSettings.configured")}
+          label={t("voiceSettings.credentials")}
           value={
             envManaged
               ? t("settings.status.envManaged")
@@ -277,13 +289,8 @@ export function VoicePanel() {
                 )
               }
             >
-              {pendingAction === "test" && (
-                <Loader2Icon
-                  className="animate-spin"
-                  data-icon="inline-start"
-                />
-              )}
-              {t("voiceSettings.test")}
+              {pendingAction === "test" && <Spinner data-icon="inline-start" />}
+              {t("voiceSettings.testAction")}
             </Button>
           }
         />
@@ -419,10 +426,7 @@ export function VoicePanel() {
               </Button>
               <Button disabled={editingDisabled} type="submit">
                 {pendingAction === "save" && (
-                  <Loader2Icon
-                    className="animate-spin"
-                    data-icon="inline-start"
-                  />
+                  <Spinner data-icon="inline-start" />
                 )}
                 {t("common.save")}
               </Button>

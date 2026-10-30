@@ -51,6 +51,7 @@ export function Board({
   onMutated,
   onCreateProject,
   onCreateTask,
+  emptyState,
 }: {
   hasError: boolean;
   hasProjects: boolean;
@@ -63,6 +64,8 @@ export function Board({
   onMutated: () => void;
   onCreateProject: () => void;
   onCreateTask: () => void;
+  /** A smart view's own empty copy; the quick-add line above is its CTA. */
+  emptyState?: { title: string; description: string };
 }) {
   const { t } = useI18n();
 
@@ -83,6 +86,17 @@ export function Board({
         isRetrying={isRetrying}
         onRetry={onRetry}
       />
+    );
+  }
+
+  if (tasks.length === 0 && emptyState) {
+    return (
+      <Empty className="min-h-56 border">
+        <EmptyHeader>
+          <EmptyTitle>{emptyState.title}</EmptyTitle>
+          <EmptyDescription>{emptyState.description}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
@@ -325,18 +339,23 @@ function TaskBoard({
       sensors={sensors}
       onDragEnd={onDragEnd}
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        {STATUS_COLUMNS.map((status) => (
-          <TaskColumn
-            interactive={interactive}
-            key={status}
-            projectById={projectById}
-            selectedProjectId={selectedProject?.id ?? null}
-            status={status}
-            tasks={tasks.filter((task) => task.status === status)}
-            onMutated={onMutated}
-          />
-        ))}
+      {/* Column count follows the space the board actually gets, not the
+          viewport: the sidebar eats 312px, so a 1024px window leaves 416px
+          for three columns (130px each, titles breaking every word). */}
+      <div className="@container">
+        <div className="grid grid-cols-1 gap-3 @min-[380px]:grid-cols-2 @min-[620px]:grid-cols-3">
+          {STATUS_COLUMNS.map((status) => (
+            <TaskColumn
+              interactive={interactive}
+              key={status}
+              projectById={projectById}
+              selectedProjectId={selectedProject?.id ?? null}
+              status={status}
+              tasks={tasks.filter((task) => task.status === status)}
+              onMutated={onMutated}
+            />
+          ))}
+        </div>
       </div>
     </DndContext>
   );

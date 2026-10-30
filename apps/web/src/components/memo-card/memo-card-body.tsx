@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+import { MessageCircleIcon } from "lucide-react";
 import { useMemo } from "react";
 import type { Attachment, Memo } from "@/api";
 import { AttachmentGallery } from "@/components/attachment-gallery";
@@ -14,6 +16,7 @@ import { extractTags } from "@/lib/memo";
 import { countTaskItems } from "@/lib/memo-tasks";
 import { cn } from "@/lib/utils";
 import { stateLabel } from "./memo-card-badges";
+import { MemoTaskBadge, useMemoTasks } from "./memo-task-badge";
 import type { MemoTaskInteraction } from "./use-memo-card-actions";
 
 /** Bodies beyond this size collapse in the timeline. */
@@ -43,17 +46,44 @@ export function MemoCardBody({
   taskInteraction,
 }: MemoCardBodyProps) {
   const { t } = useI18n();
-  const tags = memo.payload.tags ?? extractTags(memo.content);
+  // Both of these walk the whole body: tag extraction runs a regex over the
+  // full text and filterUnreferencedAttachments scans every attachment
+  // reference. Without memoization they re-ran on every parent re-render —
+  // including each scroll-driven state flip in the timeline.
+  const tags = useMemo(
+    () => memo.payload.tags ?? extractTags(memo.content),
+    [memo.payload.tags, memo.content],
+  );
+  // Stable identity: LazyMemoContent is memoized on its callbacks.
+  const handleTagClick = useMemo(
+    () =>
+      onTagClick
+        ? (tag: string) => onTagClick(tag.toLocaleLowerCase())
+        : undefined,
+    [onTagClick],
+  );
+  // Tags written in the text render as chips where they stand; the footer
+  // only carries tags the text does not spell out (set by an API client or
+  // an import), so nothing shows twice.
+  const footerTags = useMemo(() => {
+    const inText = new Set(
+      extractTags(memo.content).map((tag) => tag.toLocaleLowerCase()),
+    );
+    return tags.filter((tag) => !inText.has(tag.toLocaleLowerCase()));
+  }, [tags, memo.content]);
   // Body-referenced images render inline; the gallery keeps only the rest.
-  const galleryAttachments = filterUnreferencedAttachments(
-    attachments,
-    memo.content,
+  const galleryAttachments = useMemo(
+    () => filterUnreferencedAttachments(attachments, memo.content),
+    [attachments, memo.content],
   );
   // Long bodies (transcripts, articles) collapse so one memo cannot dominate
   // the timeline.
-  const isCollapsible =
-    memo.content.length > COLLAPSE_THRESHOLD ||
-    memo.content.split("\n").length > 12;
+  const isCollapsible = useMemo(
+    () =>
+      memo.content.length > COLLAPSE_THRESHOLD ||
+      memo.content.split("\n").length > 12,
+    [memo.content],
+  );
   const collapsed = isCollapsible && !expanded;
   // Intrinsic boxes for body images: uploaded dimensions ride the
   // attachments list, so a photo the author placed inline never shoves the
@@ -63,6 +93,10 @@ export function MemoCardBody({
     [attachments],
   );
   const taskCount = useMemo(() => countTaskItems(memo.content), [memo.content]);
+  // Only the author holds the tasks a memo filed; other readers skip the
+  // task cache entirely.
+  const memoTasks = useMemoTasks(memo.name, canManage);
+  const commentCount = memo.comment_count ?? 0;
 
   return (
     <>
@@ -80,6 +114,7 @@ export function MemoCardBody({
               resolveImageDimensions={resolveImageDimensions}
               onToggleTask={taskInteraction?.onToggleTask}
               onConvertTask={taskInteraction?.onConvertTask}
+              onTagClick={handleTagClick}
             />
           </div>
           <div
@@ -100,7 +135,9 @@ export function MemoCardBody({
             {collapsed ? t("reading.expand") : t("reading.collapse")}
           </Button>
         )}
-        {searchQuery && (
+        {/* The excerpt points at a hit hidden in the collapsed part; a short
+            note already shows every match in its body. */}
+        {searchQuery && collapsed && (
           <MemoSearchExcerpt content={memo.content} query={searchQuery} />
         )}
         {galleryAttachments.length > 0 && (
@@ -109,33 +146,49 @@ export function MemoCardBody({
           </div>
         )}
       </div>
-      {(tags.length > 0 || memo.state !== "normal") && (
+      {(footerTags.length > 0 ||
+        memo.state !== "normal" ||
+        memoTasks.length > 0 ||
+        commentCount > 0) && (
         <footer className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <div className="flex flex-wrap gap-1.5">
-            {tags.map((tag) =>
+            {footerTags.map((tag) =>
               onTagClick ? (
                 <button
                   aria-label={`#${tag}`}
-                  className="cursor-pointer rounded-full motion-safe:transition-transform motion-safe:duration-150 motion-safe:hover:-translate-y-px"
+                  className="group/tag cursor-pointer rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/25"
                   key={tag}
                   type="button"
                   onClick={() => onTagClick(tag)}
                 >
                   <Badge
-                    className="transition-colors hover:bg-brand-200 dark:hover:bg-brand-400/20"
-                    variant="brand"
+                    className="group-hover/tag:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_7%)] group-hover/tag:text-foreground"
+                    variant="tag"
                   >
                     #{tag}
                   </Badge>
                 </button>
               ) : (
-                <Badge key={tag} variant="brand">
+                <Badge key={tag} variant="tag">
                   #{tag}
                 </Badge>
               ),
             )}
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <MemoTaskBadge tasks={memoTasks} />
+            {commentCount > 0 && (
+              <Link
+                aria-label={t("comments.count", { count: commentCount })}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums hover:bg-muted hover:text-foreground"
+                hash="comments"
+                params={{ memoId: memo.id }}
+                to="/memo/$memoId"
+              >
+                <MessageCircleIcon aria-hidden="true" className="size-3.5" />
+                {commentCount}
+              </Link>
+            )}
             {memo.state !== "normal" && (
               <Badge variant="outline">{stateLabel(memo.state, t)}</Badge>
             )}

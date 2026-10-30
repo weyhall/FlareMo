@@ -29,8 +29,8 @@ export function ShortcutsDialog({
             [
               ["shortcuts.search", "⌘K / /"],
               ["shortcuts.composer", "C"],
-              ["shortcuts.linebreak", "Enter"],
-              ["shortcuts.send", "Shift + Enter"],
+              ["shortcuts.linebreak", "Enter / ⇧Enter"],
+              ["shortcuts.send", "⌘Enter"],
               ["shortcuts.saveEdit", "⌘Enter"],
               ["shortcuts.theme", "D"],
               ["shortcuts.cancel", "Esc"],

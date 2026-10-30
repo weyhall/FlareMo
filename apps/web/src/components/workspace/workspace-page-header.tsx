@@ -15,7 +15,7 @@ export function WorkspacePageHeader({
   setMobileSheetOpen,
   sidebarCollapsed,
   toggleSidebarCollapsed,
-  maxWidthClass = "max-w-[640px]",
+  contentMaxWidth = 640,
   isScrolled = false,
 }: {
   icon?: ReactNode;
@@ -26,7 +26,8 @@ export function WorkspacePageHeader({
   setMobileSheetOpen: (open: boolean) => void;
   sidebarCollapsed: boolean;
   toggleSidebarCollapsed: () => void;
-  maxWidthClass?: string;
+  /** Mirrors WorkspaceLayout's content column so the two stay aligned. */
+  contentMaxWidth?: number;
   isScrolled?: boolean;
 }) {
   const { t } = useI18n();
@@ -41,8 +42,9 @@ export function WorkspacePageHeader({
       <div
         className={cn(
           "flex h-14 items-center gap-2 px-5 lg:px-3 motion-safe:transition-[max-width,padding] motion-safe:duration-250 motion-safe:ease-signal",
-          sidebarCollapsed && cn("mx-auto w-full", maxWidthClass),
+          sidebarCollapsed && "mx-auto w-full",
         )}
+        style={sidebarCollapsed ? { maxWidth: contentMaxWidth } : undefined}
       >
         <div
           className={cn(
@@ -70,9 +72,12 @@ export function WorkspacePageHeader({
         />
 
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="flex items-center gap-2 px-1">
+          {/* min-w-0 on the row as well as the parent: without it the flex
+              item keeps its content width and `truncate` on the h1 has nothing
+              to shrink into, so a long title ran under the actions. */}
+          <div className="flex min-w-0 items-center gap-2 px-1">
             {icon}
-            <h1 className="font-semibold text-sm sm:text-base leading-none truncate">
+            <h1 className="min-w-0 truncate text-[15px] leading-none font-semibold tracking-tight">
               {title}
             </h1>
           </div>

@@ -52,8 +52,8 @@ export type ArticleEditorProps = {
 /**
  * Long-form TipTap body of the article editor. Storage stays plain markdown
  * via the official Markdown extension, exactly like the memo composer; the
- * differences are the extension set above, the taller unclipped body, and no
- * submit-on-Enter (articles are not notes).
+ * differences are the extension set above, the taller unclipped body, and a
+ * no-op Cmd/Ctrl+Enter (articles are saved by the page, not sent).
  */
 export function ArticleEditor({
   content,
@@ -76,7 +76,6 @@ export function ArticleEditor({
       onImageFiles={onImageFiles}
       onSubmitRequest={() => undefined}
       placeholder={placeholder}
-      submitOnEnter={false}
     />
   );
 }

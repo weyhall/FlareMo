@@ -116,11 +116,11 @@ export function YearHorizonPureView({
             {/* Top axis: ONLY in Calendar mode! In Heatmap mode, strictly NO TEXT! */}
             {displayMode === "calendar" ? (
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-[10px] font-mono font-medium text-foreground/80 dark:text-foreground/75">
+                <span className="text-xs font-medium text-foreground/80 dark:text-foreground/75">
                   {m.label}
                 </span>
                 {m.total > 0 && (
-                  <span className="text-[9px] font-mono tabular-nums text-brand-600 dark:text-brand-400">
+                  <span className="text-[10px] font-mono tabular-nums text-brand-600 dark:text-brand-400">
                     {m.total}
                   </span>
                 )}

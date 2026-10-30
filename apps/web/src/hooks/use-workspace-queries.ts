@@ -8,7 +8,6 @@ import {
   getTagHierarchy,
   getVectorUsage,
   listMemos,
-  listTasks,
   type MemoSpace,
   type MemoStatsResponse,
   semanticSearchMemos,
@@ -18,6 +17,7 @@ import type { ExplorerView as ViewMode } from "@/components/flaremo-explorer";
 import { todayKey } from "@/lib/calendar-date";
 import { viewToMemoState } from "@/lib/memo-cache";
 import { queryKeys } from "@/lib/query-keys";
+import { useAllTasks } from "@/lib/task-views";
 import { ACTIVITY_WINDOW_DAYS } from "@/lib/time-horizon";
 
 const PAGE_SIZE = 30;
@@ -106,11 +106,7 @@ export function useWorkspaceQueries({
   // Plain keyword search rides the memos endpoint; tasks join the results
   // client-side from the shared ["tasks"] cache (title/notes substring match).
   const keywordSearch = isSearching && !dayFilter && !isSemanticSearch;
-  const taskSearchQuery = useQuery({
-    queryKey: queryKeys.tasks.all,
-    queryFn: () => listTasks(),
-    enabled: keywordSearch,
-  });
+  const taskSearchQuery = useAllTasks({ enabled: keywordSearch });
   const matchingTasks = useMemo(() => {
     if (!keywordSearch) return [] as Task[];
     const needle = searchQuery.toLocaleLowerCase();
@@ -124,7 +120,13 @@ export function useWorkspaceQueries({
   }, [keywordSearch, taskSearchQuery.data, searchQuery]);
 
   const memosQuery = useInfiniteQuery({
-    queryKey: ["memos", space, view, searchQuery, activeTag, untagged],
+    queryKey: queryKeys.memos.list(
+      space,
+      view,
+      searchQuery,
+      activeTag,
+      untagged,
+    ),
     initialPageParam: undefined as string | undefined,
     enabled: !isSemanticSearch,
     queryFn: ({ pageParam, signal }) =>
@@ -149,12 +151,16 @@ export function useWorkspaceQueries({
     // and the default 84-day one renders a whole year of zeroes. Both this
     // query and the layout's sidebar query share the key on purpose so the page
     // makes one request; the layout asks for the same window.
-    queryKey: ["memo-stats", space, timeZone, ACTIVITY_WINDOW_DAYS],
+    queryKey: queryKeys.memoStats.forWindow(
+      space,
+      timeZone,
+      ACTIVITY_WINDOW_DAYS,
+    ),
     queryFn: () => getMemoStats(timeZone, space, ACTIVITY_WINDOW_DAYS),
     retry: false,
   });
   const tagHierarchyQuery = useQuery({
-    queryKey: ["tag-hierarchy", space],
+    queryKey: queryKeys.tagHierarchy.forSpace(space),
     queryFn: () => getTagHierarchy(space),
     retry: false,
   });
@@ -165,8 +171,13 @@ export function useWorkspaceQueries({
     retry: false,
   });
   const captureStatusQuery = useQuery({
-    queryKey: queryKeys.captureStatus.forUser(currentUserQuery.data?.id ?? ""),
+    // Gated on a known user: with `?? ""` the query fired once for the empty
+    // key and again for the real id, so every cold start paid two requests for
+    // the same status. The explorer reads through this same key, so both
+    // components share one cache entry.
+    queryKey: queryKeys.captureStatus.forUser(currentUserQuery.data?.id),
     queryFn: getCaptureStatus,
+    enabled: Boolean(currentUserQuery.data?.id),
     staleTime: 30_000,
     retry: false,
   });

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { getPushConfig, subscribeToPush, unsubscribeFromPush } from "@/api";
 import { InfoTip } from "@/components/info-tip";
+import { QueryErrorState } from "@/components/query-error-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useI18n } from "@/i18n";
 import { errorMessage } from "@/lib/error";
@@ -84,6 +86,21 @@ export function PushPanel() {
   });
 
   if (!supported) return null;
+  if (configQuery.isPending) {
+    return (
+      <div className="flex flex-col gap-3 p-4">
+        <Skeleton className="h-12 w-full rounded-xl" />
+      </div>
+    );
+  }
+  if (configQuery.isError) {
+    return (
+      <QueryErrorState
+        isRetrying={configQuery.isFetching}
+        onRetry={() => void configQuery.refetch()}
+      />
+    );
+  }
   const enabled = (configQuery.data?.subscriptions ?? 0) > 0;
   const configured = Boolean(configQuery.data?.public_key);
   const isPending =

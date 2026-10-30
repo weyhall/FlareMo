@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
+  FolderIcon,
   MoreHorizontalIcon,
   PencilIcon,
   Trash2Icon,
@@ -85,12 +86,13 @@ export function ProjectRow({
     <>
       <div
         className={
-          "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm " +
+          "group flex h-9 shrink-0 items-center gap-3 rounded-lg px-3 text-sm " +
           (selected
             ? "bg-muted text-foreground"
             : "text-muted-foreground hover:bg-muted hover:text-foreground")
         }
       >
+        <FolderIcon aria-hidden="true" className="size-4 shrink-0" />
         <button
           className="min-w-0 flex-1 truncate text-left"
           type="button"

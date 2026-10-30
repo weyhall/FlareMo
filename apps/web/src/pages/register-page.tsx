@@ -10,6 +10,7 @@ import {
 import { authClient } from "@/auth-client";
 import { AuthPageFrame } from "@/components/auth-page-frame";
 import { CaptchaField } from "@/components/captcha-field";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -129,7 +130,7 @@ export function RegisterPage() {
             {t("auth.verifyEmailHint")}
           </p>
           {resent ? (
-            <p className="text-sm leading-6 text-emerald-700 dark:text-emerald-300">
+            <p className="text-sm leading-6 text-success-emphasis">
               {t("auth.resendVerificationSent")}
             </p>
           ) : (
@@ -160,19 +161,19 @@ export function RegisterPage() {
   return (
     <AuthPageFrame title={t("auth.registerTitle")}>
       {bootstrapQuery.data?.initialized === false && (
-        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+        <Alert className="mb-4" role="status" variant="warning">
           {t("auth.registrationUnavailable")}
-        </p>
+        </Alert>
       )}
       {registrationClosed && (
-        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+        <Alert className="mb-4" role="status" variant="warning">
           {t("auth.registrationClosed")}
-        </p>
+        </Alert>
       )}
       {(registrationQuery.isError || bootstrapQuery.isError) && (
-        <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+        <Alert className="mb-4" variant="destructive">
           {t("auth.registrationStatusUnavailable")}
-        </p>
+        </Alert>
       )}
       <form
         className="flex flex-col gap-4"
@@ -267,11 +268,7 @@ export function RegisterPage() {
             />
           )
         )}
-        {formError && (
-          <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            {formError}
-          </p>
-        )}
+        {formError && <Alert variant="destructive">{formError}</Alert>}
         <Button disabled={isSubmitting} type="submit" variant="brand">
           {isSubmitting ? t("auth.registering") : t("auth.signUp")}
         </Button>

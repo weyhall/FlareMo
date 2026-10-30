@@ -1,13 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import {
-  FootprintsIcon,
-  Loader2Icon,
-  PlusIcon,
-  ShuffleIcon,
-} from "lucide-react";
+import { FootprintsIcon, PlusIcon, ShuffleIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getRandomWalkMemo, getWalkNextMemo } from "@/api";
 import { MemoSnapshotCard } from "@/components/memo-snapshot-card";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -19,6 +15,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { WorkspaceLayout } from "@/components/workspace/workspace-layout";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-page-header";
 import { type TranslationKey, useI18n } from "@/i18n";
@@ -99,6 +96,39 @@ export function RandomWalkPage() {
     void start();
   };
 
+  // Keyboard walking, so a long wander needs no pointer: → or J continues,
+  // ← or K steps back through the trail. Typing in a field is left alone.
+  const keyActionsRef = useRef<{ walk: () => void; back: () => void }>({
+    walk: () => {},
+    back: () => {},
+  });
+  keyActionsRef.current = {
+    walk: () => void walk(),
+    back: () => setCursor((current) => Math.max(0, current - 1)),
+  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        target?.closest("input, textarea, [contenteditable=true]")
+      ) {
+        return;
+      }
+      if (event.key === "ArrowRight" || event.key === "j") {
+        event.preventDefault();
+        keyActionsRef.current.walk();
+      } else if (event.key === "ArrowLeft" || event.key === "k") {
+        event.preventDefault();
+        keyActionsRef.current.back();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const step = steps[cursor];
 
   return (
@@ -132,22 +162,11 @@ export function RandomWalkPage() {
               <Skeleton className="h-64 w-full" />
             )}
             {loadError && (
-              <Empty className="min-h-72 border">
-                <EmptyHeader>
-                  <EmptyTitle>{t("list.errorTitle")}</EmptyTitle>
-                  <EmptyDescription>
-                    {t("list.errorDescription")}
-                  </EmptyDescription>
-                </EmptyHeader>
-                <Button
-                  className="mt-2"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void (steps.length > 0 ? walk() : start())}
-                >
-                  {t("common.retry")}
-                </Button>
-              </Empty>
+              <QueryErrorState
+                className="min-h-72 border text-muted-foreground"
+                isRetrying={pending}
+                onRetry={() => void (steps.length > 0 ? walk() : start())}
+              />
             )}
             {!pending && !loadError && steps.length === 0 && (
               <Empty className="min-h-72 border border-border/60 bg-card/50 motion-safe:animate-rise">
@@ -200,10 +219,7 @@ export function RandomWalkPage() {
                     onClick={() => void walk()}
                   >
                     {pending ? (
-                      <Loader2Icon
-                        className="motion-safe:animate-spin"
-                        data-icon="inline-start"
-                      />
+                      <Spinner data-icon="inline-start" />
                     ) : (
                       <FootprintsIcon data-icon="inline-start" />
                     )}
@@ -216,6 +232,9 @@ export function RandomWalkPage() {
                   >
                     {t("review.walkFinish")}
                   </Button>
+                  <span className="hidden text-xs text-muted-foreground sm:inline">
+                    {t("review.walkKeyHint")}
+                  </span>
                 </div>
                 {exhausted && (
                   <div className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">

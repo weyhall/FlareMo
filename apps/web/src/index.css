@@ -1,9 +1,68 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
+
+/*
+ * Base UI state variants. These used to arrive by importing all of
+ * `shadcn/tailwind.css`, which also shipped ~500 lines of unusued scroll-fade
+ * and shimmer utilities into the blocking stylesheet. Only the variants the
+ * components actually author against are kept here.
+ */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
 
 /*
  * FlareMo "Ember" design tokens.
@@ -95,6 +154,19 @@
     --shadow-sm: var(--shadow-sm);
     --shadow-md: var(--shadow-md);
     --shadow-lg: var(--shadow-lg);
+    /* The outer steps alias into the warm scale. Left unmapped, Tailwind's
+       cold black defaults would apply and keep casting in dark mode, where
+       every other elevation token is zeroed. */
+    --shadow-2xs: var(--shadow-xs);
+    --shadow-xl: var(--shadow-lg);
+    --shadow-2xl: var(--shadow-lg);
+
+    /* Readable text on a 10–15% tint of the matching status color. The
+       *-foreground tokens are for text on a solid fill and go dark in dark
+       mode, so they cannot be reused on tinted banners and badges. */
+    --color-success-emphasis: var(--success-emphasis);
+    --color-warning-emphasis: var(--warning-emphasis);
+    --color-info-emphasis: var(--info-emphasis);
 
     /* Motion: one duration scale + two easing curves for the whole product.
        Interaction feedback ≤ 140ms, entrances ≤ 320ms. The animate tokens
@@ -140,18 +212,18 @@
 
     /* Near-neutral surfaces (KOSX paper/ink family) with a hint of warmth
        so the signal-orange accent never sits on cold gray. */
-    --background: oklch(0.982 0.003 75);
-    --foreground: oklch(0.24 0.006 75);
-    --card: oklch(1 0 0);
+    --background: oklch(0.976 0.0075 82);
+    --foreground: oklch(0.235 0.012 65);
+    --card: oklch(0.996 0.003 85);
     --card-foreground: oklch(0.24 0.006 75);
-    --popover: oklch(1 0 0);
+    --popover: oklch(0.997 0.003 85);
     --popover-foreground: oklch(0.24 0.006 75);
     --primary: var(--brand-500);
     --primary-foreground: oklch(0.99 0.003 75);
-    --secondary: oklch(0.955 0.004 75);
+    --secondary: oklch(0.952 0.007 80);
     --secondary-foreground: oklch(0.28 0.006 75);
-    --muted: oklch(0.952 0.004 75);
-    --muted-foreground: oklch(0.52 0.008 75);
+    --muted: oklch(0.948 0.007 80);
+    --muted-foreground: oklch(0.5 0.009 75);
     --accent: var(--brand-50);
     --accent-foreground: var(--brand-700);
     --destructive: oklch(0.577 0.245 27.325);
@@ -161,20 +233,34 @@
     --warning-foreground: oklch(0.30 0.04 70);
     --info: oklch(0.58 0.10 240);
     --info-foreground: oklch(0.98 0.005 240);
-    --border: oklch(0.912 0.004 75);
-    --input: oklch(0.912 0.004 75);
+    --success-emphasis: oklch(0.45 0.11 155);
+    --warning-emphasis: oklch(0.47 0.10 65);
+    --info-emphasis: oklch(0.45 0.10 245);
+    --border: oklch(0.918 0.008 80);
+    --input: oklch(0.885 0.009 78);
     --ring: var(--brand-400);
-    --radius: 0.875rem;
-    --shadow-xs: 0 1px 2px oklch(0.30 0.02 60 / 0.05);
+    /* Ember 2: a tighter, more exact corner. Controls 10px, cards 14px,
+       dialogs 18px. The 0.875rem base read as soft and bubbly at h-8. */
+    --radius: 0.625rem;
+    /* Two-layer warm shadows: a tight contact shadow for edge definition plus
+       a soft ambient one for lift. Kept low so surfaces read as paper. */
+    --shadow-xs: 0 1px 2px oklch(0.30 0.02 60 / 0.045);
     --shadow-sm:
-        0 1px 3px oklch(0.30 0.02 60 / 0.07),
-        0 1px 2px -1px oklch(0.30 0.02 60 / 0.07);
+        0 1px 2px oklch(0.30 0.02 60 / 0.05),
+        0 2px 6px -2px oklch(0.30 0.02 60 / 0.06);
     --shadow-md:
-        0 4px 12px -2px oklch(0.30 0.02 60 / 0.09),
-        0 2px 4px -2px oklch(0.30 0.02 60 / 0.05);
+        0 1px 2px oklch(0.30 0.02 60 / 0.05),
+        0 6px 16px -6px oklch(0.30 0.02 60 / 0.10);
     --shadow-lg:
-        0 12px 32px -8px oklch(0.30 0.02 60 / 0.14),
-        0 4px 8px -4px oklch(0.30 0.02 60 / 0.06);
+        0 1px 3px oklch(0.30 0.02 60 / 0.06),
+        0 16px 40px -12px oklch(0.30 0.02 60 / 0.18);
+
+    /* Paper grain: a fractal-noise tile laid over the page and every paper
+       surface. ~6% warm ink in light mode, a faint light fleck in dark.
+       Static, ~400 bytes, no request. */
+    --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .25 0 0 0 0 .16 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    /* The lit top edge of a sheet catching light. */
+    --paper-edge: inset 0 1px 0 oklch(1 0 0 / 0.7);
 
     /* Liquid Glass material (docs/liquid-glass-design.md). Neutral by design:
        [data-accent] presets never tint the glass, so the accent matrix stays
@@ -191,11 +277,11 @@
 .dark {
     /* KOSX paper/surface anchors: paper #0a0a0a ≈ oklch(0.155),
        surface #1c1c1e ≈ oklch(0.21). */
-    --background: oklch(0.155 0.003 75);
-    --foreground: oklch(0.955 0.003 75);
-    --card: oklch(0.21 0.003 75);
+    --background: oklch(0.158 0.006 70);
+    --foreground: oklch(0.95 0.008 80);
+    --card: oklch(0.207 0.007 70);
     --card-foreground: oklch(0.955 0.003 75);
-    --popover: oklch(0.235 0.003 75);
+    --popover: oklch(0.232 0.007 70);
     --popover-foreground: oklch(0.955 0.003 75);
     --primary: var(--brand-400);
     --primary-foreground: oklch(0.20 0.03 30);
@@ -212,8 +298,11 @@
     --warning-foreground: oklch(0.20 0.04 70);
     --info: oklch(0.70 0.10 240);
     --info-foreground: oklch(0.16 0.03 240);
+    --success-emphasis: oklch(0.82 0.11 155);
+    --warning-emphasis: oklch(0.85 0.10 80);
+    --info-emphasis: oklch(0.82 0.09 240);
     --border: oklch(1 0 0 / 9%);
-    --input: oklch(1 0 0 / 14%);
+    --input: oklch(1 0 0 / 13%);
     --ring: var(--brand-400);
     /* 暗色不用阴影表达层级（表面明度阶梯 + 发丝线）；token 置近零以免散落各处
        的 shadow-* 类在暗色下投影（docs/design-system.md 形状与层级） */
@@ -223,6 +312,8 @@
     --shadow-lg: 0 0 0 transparent;
     /* Dark hierarchy comes from tint depth, not shadows — same rule as the
        shadow tokens above. */
+    --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .95 0 0 0 0 .85 0 0 0 .035 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    --paper-edge: inset 0 1px 0 oklch(1 0 0 / 0.05);
     --glass-tint: oklch(0.22 0.012 60 / 0.70);
     --glass-rim: oklch(1 0 0 / 0.24);
     --glass-edge: oklch(1 0 0 / 0.08);
@@ -340,6 +431,7 @@
     }
   body {
     @apply bg-background text-foreground antialiased;
+    background-image: var(--paper-grain);
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
     text-rendering: optimizeLegibility;
     }
@@ -507,6 +599,24 @@
   display: none;
 }
 
+/* Paper surface: grain + a lit top edge over whatever card background the
+   element already has. Used on the composer, memo cards, cards and settings
+   groups so every sheet in the app shares one material. */
+.paper {
+  background-image: var(--paper-grain);
+  /* Tailwind v4 composes every shadow/ring utility into one box-shadow that
+     starts with --tw-inset-shadow; filling that slot adds the lit edge
+     without clobbering the element's ring or drop shadow. */
+  --tw-inset-shadow: var(--paper-edge);
+}
+
+/* Icons: lucide's default 2px stroke reads heavy next to 13–15px text. 1.75
+   matches the weight of Geist at UI sizes. Only the default attribute is
+   overridden, so an explicit strokeWidth (the big capture mic) still wins. */
+svg.lucide[stroke-width="2"] {
+  stroke-width: 1.75;
+}
+
 /* Keep auth controls compact on desktop while giving touch users a reliable
    target size and preventing mobile browsers from zooming focused inputs. */
 @media (max-width: 767px) and (any-pointer: coarse) {
@@ -521,7 +631,10 @@
 }
 
 @layer utilities {
+  /* Kept local rather than inherited from shadcn's stylesheet: `-ms-overflow-style`
+     was the only thing the vendor copy added, and it now costs nothing. */
   .no-scrollbar {
+    -ms-overflow-style: none;
     scrollbar-width: none;
   }
 
@@ -541,11 +654,6 @@
     @apply text-[15px] leading-7 text-foreground;
     text-wrap: pretty;
     word-break: break-word;
-  }
-
-  .dark .bg-card,
-  .dark [data-slot="card"] {
-    box-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.05);
   }
 
   .memo-markdown > * + * {
@@ -581,7 +689,14 @@
   }
 
   .memo-markdown li::marker {
-    @apply text-brand-400;
+    @apply text-muted-foreground/70;
+  }
+
+  /* GFM task items already carry a checkbox; a bullet beside it doubles the
+     marker. */
+  .memo-markdown li:has(> input[type="checkbox"]),
+  .memo-markdown li:has(> p > input[type="checkbox"]) {
+    @apply -ms-5 list-none;
   }
 
   .memo-markdown a {
@@ -589,11 +704,11 @@
   }
 
   .memo-markdown blockquote {
-    @apply rounded-e-md border-s-2 border-brand-300 bg-brand-50 py-1 pe-3 ps-4 text-muted-foreground dark:border-brand-600 dark:bg-brand-400/5;
+    @apply border-s-2 border-primary/45 py-0.5 ps-4 text-muted-foreground;
   }
 
   .memo-markdown code {
-    @apply rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
+    @apply rounded-[5px] border border-border/60 bg-muted/70 px-1 py-px font-mono text-[0.85em];
   }
 
   .memo-markdown pre {
@@ -613,8 +728,23 @@
     @apply border px-3 py-2 text-left;
   }
 
+  /* Drawn task box: the native one renders as a glaring white square in dark
+     mode. A hairline square on the card, ticked with a primary fill. */
   .memo-markdown input[type="checkbox"] {
-    @apply mr-2 align-middle accent-brand-500;
+    @apply me-2 inline-grid size-[15px] cursor-pointer appearance-none place-content-center rounded-[4px] border-[1.5px] border-muted-foreground/45 bg-card align-[-2px] transition-colors hover:border-primary/70 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25 disabled:cursor-default;
+  }
+
+  .memo-markdown input[type="checkbox"]:checked {
+    @apply border-primary bg-primary;
+  }
+
+  .memo-markdown input[type="checkbox"]:checked::after {
+    @apply -mt-px h-[8px] w-[4.5px] rotate-45 border-r-[1.75px] border-b-[1.75px] border-primary-foreground;
+    content: "";
+  }
+
+  .memo-markdown li:has(> input[type="checkbox"]:checked) {
+    @apply text-muted-foreground;
   }
 
   /* Shiki dual themes on article surfaces: colors arrive as CSS variables
@@ -732,12 +862,12 @@
 
   .composer-editor-content blockquote,
   .article-editor-content blockquote {
-    @apply my-3 rounded-e-md border-s-2 border-brand-300 bg-brand-50 py-1 pe-3 ps-4 text-muted-foreground dark:border-brand-600 dark:bg-brand-400/5;
+    @apply my-3 border-s-2 border-primary/45 py-0.5 ps-4 text-muted-foreground;
   }
 
   .composer-editor-content code,
   .article-editor-content code {
-    @apply rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
+    @apply rounded-[5px] border border-border/60 bg-muted/70 px-1 py-px font-mono text-[0.85em];
   }
 
   .composer-editor-content pre,
@@ -761,6 +891,30 @@
     @apply my-3 list-none ps-1;
   }
 
+  /* A note's lists sit in the text flow with the same rhythm as paragraphs
+     (articles keep their airier block spacing). */
+  .composer-editor-content ul,
+  .composer-editor-content ol,
+  .composer-editor-content ul[data-type="taskList"] {
+    @apply my-1;
+  }
+
+  /* The first block starts on the first line. The container scrolls, so a
+     child's top margin never collapses into its padding: without this,
+     turning an empty note into a list dropped the caret 12px below where the
+     placeholder stood. The task-list selector repeats to outrank its rule. */
+  .composer-editor-content > :first-child,
+  .composer-editor-content > ul[data-type="taskList"]:first-child,
+  .article-editor-content > :first-child,
+  .article-editor-content > ul[data-type="taskList"]:first-child {
+    @apply mt-0;
+  }
+
+  .composer-editor-content > :last-child,
+  .composer-editor-content > ul[data-type="taskList"]:last-child {
+    @apply mb-0;
+  }
+
   .composer-editor-content ul[data-type="taskList"] li,
   .article-editor-content ul[data-type="taskList"] li {
     @apply flex items-start gap-2;
@@ -779,6 +933,19 @@
   .composer-editor-content ul[data-type="taskList"] li[data-checked="true"] > div,
   .article-editor-content ul[data-type="taskList"] li[data-checked="true"] > div {
     @apply text-muted-foreground line-through;
+  }
+
+  /* Links read as links while writing, same ink as the reading view. The
+     editor does not follow them on click (openOnClick: false), so the
+     pointer stays a text caret. */
+  .composer-editor-content a,
+  .article-editor-content a {
+    @apply cursor-text font-medium text-brand-600 underline decoration-brand-400/40 underline-offset-4 dark:text-brand-300;
+  }
+
+  .composer-editor-content hr,
+  .article-editor-content hr {
+    @apply my-4 border-border/60;
   }
 
   /* `#tag` chips are a typing-time decoration; storage keeps plain text. */
@@ -829,6 +996,21 @@
   /* Timestamp chips: tappable cues in a transcript. */
   .memo-timestamp {
     @apply mr-1.5 inline-flex items-center rounded-md bg-brand-50 px-1.5 py-0.5 font-mono text-[0.8em] text-brand-700 tabular-nums transition-colors hover:bg-brand-100 dark:bg-brand-400/12 dark:text-brand-200 dark:hover:bg-brand-400/20;
+  }
+
+  /* An in-text #tag: a quiet chip at the point it was written. It never
+     breaks between the hash and the name. */
+  .memo-markdown .memo-tag {
+    @apply inline-block rounded-md bg-muted px-1 align-baseline text-[0.92em] leading-[1.6] whitespace-nowrap text-foreground/75 no-underline decoration-transparent dark:bg-muted/80;
+  }
+
+  /* An @mention: a name, not a filter. Brand-tinted ink, no chip. */
+  .memo-markdown .memo-mention {
+    @apply font-medium whitespace-nowrap text-brand-700 dark:text-brand-300;
+  }
+
+  .memo-markdown button.memo-tag {
+    @apply cursor-pointer motion-safe:transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_8%)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40;
   }
 
   .memo-timestamp-static {

@@ -1,14 +1,23 @@
 import type { Editor } from "@tiptap/react";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { MemoVisibility } from "@/api";
 import { ComposerFileChips } from "@/components/composer/composer-file-chips";
 import { ComposerFocusCanvas } from "@/components/composer/composer-focus-canvas-lazy";
+import { ComposerScheduleChip } from "@/components/composer/composer-schedule-menu";
 import {
+  ComposerMentionSuggestions,
   ComposerTagSuggestions,
   ComposerWikiSuggestions,
 } from "@/components/composer/composer-suggestion-lists";
 import { ComposerToolbar } from "@/components/composer/composer-toolbar";
 import { ComposerVisibilityMenu } from "@/components/composer/composer-visibility-menu";
+import {
+  type ActiveFormats,
+  NO_ACTIVE_FORMATS,
+  readActiveFormats,
+  sameActiveFormats,
+} from "@/components/composer/format-actions";
 import { VoiceCaptureBar } from "@/components/composer/voice-capture-bar";
 import { RichComposerEditor } from "@/components/rich-composer-editor-lazy";
 import { useComposerSuggestions } from "@/hooks/use-composer-suggestions";
@@ -17,6 +26,8 @@ import { useInlineImageUploads } from "@/hooks/use-inline-image-uploads";
 import { useI18n } from "@/i18n";
 import type { MemoCaptureInput } from "@/lib/local-memo-capture";
 import { extractTags } from "@/lib/memo";
+import { scheduledTaskTitles } from "@/lib/memo-schedule";
+import { countMemoImages, MAX_MEMO_IMAGES } from "@/lib/memo-submission";
 import type { TagSuggestion } from "@/lib/tag-autocomplete";
 
 type MemoComposerProps = {
@@ -64,12 +75,33 @@ export function MemoComposer({
 }: MemoComposerProps) {
   const { t } = useI18n();
   const editorRef = useRef<Editor | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
+  // Toolbar highlight for the selection; only re-renders when a flag flips.
+  const [activeFormats, setActiveFormats] =
+    useState<ActiveFormats>(NO_ACTIVE_FORMATS);
+  const syncActiveFormats = (editor: Editor) => {
+    const next = readActiveFormats(editor);
+    setActiveFormats((current) =>
+      sameActiveFormats(current, next) ? current : next,
+    );
+  };
   const canSubmit = Boolean(draft.content.trim() || draft.files.length > 0);
   // Idle state shrinks to one line (flomo-style): unfocused and empty. Focus
   // or any content expands the editor back to full height.
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const isCompact = !isComposerFocused && !canSubmit && !isPending;
+  // Sending locks the editor (contenteditable=false), which blurs it. That
+  // blur is not the author leaving: keep the box expanded and hand the caret
+  // back once the send settles, so the next note can be typed straight away.
+  const isPendingRef = useRef(isPending);
+  isPendingRef.current = isPending;
+  const refocusAfterSendRef = useRef(false);
+  useEffect(() => {
+    if (isPending || !refocusAfterSendRef.current) return;
+    refocusAfterSendRef.current = false;
+    editorRef.current?.commands.focus("end");
+  }, [isPending]);
   // Uploads read the latest draft through a ref: the async chain would
   // otherwise insert into a stale closure while the user keeps typing.
   const draftRef = useRef(draft);
@@ -110,13 +142,28 @@ export function MemoComposer({
   const {
     setActiveTagToken,
     setActiveWikiToken,
+    handleSuggestionKeyDown,
+    activeIndex: suggestionIndex,
+    setActiveIndex: setSuggestionIndex,
+    anchor: suggestionAnchor,
     tagSuggestions,
     showTagSuggestions,
     acceptTagSuggestion,
     wikiSuggestions,
     showWikiSuggestions,
     acceptWikiSuggestion,
-  } = useComposerSuggestions({ editorRef, isPending, tags });
+    setActiveMentionToken,
+    mentionSuggestions,
+    showMentionSuggestions,
+    acceptMentionSuggestion,
+  } = useComposerSuggestions({
+    editorRef,
+    containerRef: formRef,
+    isPending,
+    tags,
+    // Mentions only reach someone in a shared space.
+    mentions: showVisibility,
+  });
 
   const { capture, captureController, voiceActive, now } = useComposerVoice({
     draftRef,
@@ -130,6 +177,9 @@ export function MemoComposer({
     if (!canSubmit || isUploadingImages || voiceActive) {
       return;
     }
+    refocusAfterSendRef.current = Boolean(
+      formRef.current?.contains(document.activeElement),
+    );
     try {
       await onSubmit(draft);
     } catch {
@@ -145,14 +195,17 @@ export function MemoComposer({
 
   return (
     <form
-      className="group relative flex w-full flex-col rounded-xl border border-border bg-card shadow-xs motion-safe:animate-rise motion-safe:transition-[border-color,box-shadow] motion-safe:duration-200 focus-within:border-brand-400/60 focus-within:shadow-md focus-within:ring-2 focus-within:ring-brand-400/25"
+      className="paper group relative flex w-full flex-col rounded-xl border border-border/80 bg-card shadow-xs motion-safe:animate-rise motion-safe:transition-[border-color,box-shadow] motion-safe:duration-200 focus-within:border-[color-mix(in_oklch,var(--input),var(--foreground)_10%)] focus-within:shadow-md"
       data-compact={isCompact ? "true" : undefined}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          setIsComposerFocused(false);
-        }
+        if (event.currentTarget.contains(event.relatedTarget)) return;
+        // Focus moving somewhere real means the author left on purpose.
+        if (event.relatedTarget) refocusAfterSendRef.current = false;
+        if (isPendingRef.current && !event.relatedTarget) return;
+        setIsComposerFocused(false);
       }}
       onFocus={() => setIsComposerFocused(true)}
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -168,6 +221,12 @@ export function MemoComposer({
           onImageFiles={enqueueInlineUploads}
           onTagTokenChange={tags ? setActiveTagToken : undefined}
           onWikiLinkTokenChange={setActiveWikiToken}
+          onMentionTokenChange={
+            showVisibility ? setActiveMentionToken : undefined
+          }
+          onSuggestionKeyDown={handleSuggestionKeyDown}
+          onTransaction={syncActiveFormats}
+          formatMenu="note"
           onSubmitRequest={() => {
             if (!isUploadingImages && !voiceActive) void submit();
           }}
@@ -185,12 +244,26 @@ export function MemoComposer({
       <ComposerTagSuggestions
         visible={showTagSuggestions}
         suggestions={tagSuggestions}
+        activeIndex={suggestionIndex}
+        anchor={suggestionAnchor}
         onAccept={acceptTagSuggestion}
+        onHighlight={setSuggestionIndex}
+      />
+      <ComposerMentionSuggestions
+        visible={showMentionSuggestions}
+        suggestions={mentionSuggestions}
+        activeIndex={suggestionIndex}
+        anchor={suggestionAnchor}
+        onAccept={acceptMentionSuggestion}
+        onHighlight={setSuggestionIndex}
       />
       <ComposerWikiSuggestions
         visible={showWikiSuggestions}
         suggestions={wikiSuggestions}
+        activeIndex={suggestionIndex}
+        anchor={suggestionAnchor}
         onAccept={acceptWikiSuggestion}
+        onHighlight={setSuggestionIndex}
       />
       <ComposerFileChips
         files={draft.files}
@@ -201,14 +274,38 @@ export function MemoComposer({
           })
         }
       />
-      <div className="flex h-10 items-center justify-between gap-2 rounded-b-xl bg-card px-3 pb-1">
+      {draft.schedule && (
+        <ComposerScheduleChip
+          disabled={isPending}
+          schedule={draft.schedule}
+          taskCount={scheduledTaskTitles(draft.content).length}
+          onClear={() => commitDraft({ schedule: undefined })}
+        />
+      )}
+      <div className="flex h-11 items-center justify-between gap-2 rounded-b-xl border-t border-border/50 px-2.5 motion-safe:transition-colors group-data-[compact=true]:border-transparent">
         <ComposerToolbar
-          draft={draft}
+          activeFormats={activeFormats}
           isPending={isPending}
           voiceActive={voiceActive}
           captureAvailable={captureAvailable}
           withEditor={withEditor}
-          onDraftChange={onDraftChange}
+          onAddFiles={(files) => {
+            // A note holds nine images at most; extra picks are dropped
+            // with a pointer to articles rather than failing at send time.
+            let room = MAX_MEMO_IMAGES - countMemoImages(draftRef.current);
+            const accepted = files.filter((file) => {
+              if (!file.type.startsWith("image/")) return true;
+              room -= 1;
+              return room >= 0;
+            });
+            if (accepted.length < files.length) {
+              toast.error(t("toast.tooManyMemoImages"));
+            }
+            if (accepted.length === 0) return;
+            commitDraft({ files: [...draftRef.current.files, ...accepted] });
+          }}
+          schedule={draft.schedule}
+          onScheduleChange={(schedule) => commitDraft({ schedule })}
           onStartVoice={() => void captureController.start()}
           onExpand={
             onSubmitArticle ? () => setIsFullscreenOpen(true) : undefined

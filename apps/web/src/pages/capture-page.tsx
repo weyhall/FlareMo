@@ -1,4 +1,7 @@
-import { CAPTURE_MAX_DURATION_MS, CAPTURE_MAX_TEXT } from "@flaremo/contracts";
+import {
+  CAPTURE_MAX_DURATION_MS,
+  CAPTURE_MAX_TEXT,
+} from "@flaremo/contracts/constants";
 import { Link } from "@tanstack/react-router";
 import { Mic, Square } from "lucide-react";
 import {
@@ -112,7 +115,7 @@ export function CapturePage() {
 
   return (
     <WorkspaceLayout
-      maxWidthClass="max-w-2xl"
+      contentMaxWidth={672}
       header={({
         sidebarCollapsed,
         toggleSidebarCollapsed,
@@ -121,11 +124,11 @@ export function CapturePage() {
         explorer,
       }) => (
         <WorkspacePageHeader
+          contentMaxWidth={672}
           explorer={explorer}
           icon={
             <Mic className="size-4 shrink-0 text-brand-600 dark:text-brand-400" />
           }
-          maxWidthClass="max-w-2xl"
           mobileSheetOpen={mobileSheetOpen}
           setMobileSheetOpen={setMobileSheetOpen}
           sidebarCollapsed={sidebarCollapsed}
@@ -427,6 +430,7 @@ export function CapturePage() {
                     {canManageVoiceService ? (
                       <Link
                         className="underline underline-offset-4 hover:text-foreground"
+                        search={{ section: "voice" }}
                         to="/account"
                       >
                         {t("capture.unavailableOwnerLink")}

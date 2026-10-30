@@ -3,7 +3,6 @@ import {
   CopyIcon,
   ExternalLinkIcon,
   Globe2Icon,
-  Loader2Icon,
   LockIcon,
   UsersIcon,
 } from "lucide-react";
@@ -19,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 import { useClipboard } from "@/hooks/use-clipboard";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -185,7 +185,7 @@ export function MemoVisibilityDialog({
               </span>
               {isUpdating && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Loader2Icon className="size-3 animate-spin" />
+                  <Spinner className="size-3" />
                   {t("share.generatingLink")}
                 </span>
               )}
@@ -208,7 +208,7 @@ export function MemoVisibilityDialog({
               >
                 {copied ? (
                   <>
-                    <CheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400 motion-safe:animate-scale-in" />
+                    <CheckIcon className="size-3.5 text-success-emphasis motion-safe:animate-scale-in" />
                     <span>{t("toast.linkCopied")}</span>
                   </>
                 ) : (

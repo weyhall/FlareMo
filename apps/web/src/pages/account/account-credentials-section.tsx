@@ -1,6 +1,7 @@
 import { KeyRoundIcon, RefreshCcwIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
 import { InfoTip } from "@/components/info-tip";
+import { Alert } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -168,11 +169,7 @@ export function AccountCredentialsSection({
                 onChange={(event) => setNewEmail(event.target.value)}
               />
             </label>
-            {emailError && (
-              <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-                {emailError}
-              </p>
-            )}
+            {emailError && <Alert variant="destructive">{emailError}</Alert>}
             <DialogFooter className="mt-2">
               <Button
                 disabled={changeEmailIsPending}
@@ -256,9 +253,7 @@ export function AccountCredentialsSection({
               />
             </label>
             {passwordError && (
-              <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-                {passwordError}
-              </p>
+              <Alert variant="destructive">{passwordError}</Alert>
             )}
             <DialogFooter className="mt-2">
               <Button
@@ -345,11 +340,7 @@ export function DeleteAccountSection({
                 onChange={(event) => setDeletePassword(event.target.value)}
               />
             </label>
-            {deleteError && (
-              <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-                {deleteError}
-              </p>
-            )}
+            {deleteError && <Alert variant="destructive">{deleteError}</Alert>}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel

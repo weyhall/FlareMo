@@ -25,7 +25,6 @@ import { useMemoMutations } from "@/hooks/use-memo-mutations";
 import { queryKeys } from "@/lib/query-keys";
 import { ACTIVITY_WINDOW_DAYS } from "@/lib/time-horizon";
 import { TIMELINE_SEARCH } from "@/lib/timeline-search";
-import { cn } from "@/lib/utils";
 
 const AccountSettingsDialog = lazy(() =>
   import("@/pages/account-page").then((module) => ({
@@ -50,22 +49,34 @@ export type WorkspaceHeaderRenderProps = {
   explorer: WorkspaceSidebarContent;
 };
 
+/**
+ * One number, not two classes. The shell previously took a `maxWidthClass`
+ * for the content column and a separate `outerMaxWidthClass` for the row that
+ * contains it; a page that widened only the former still got a content column
+ * clamped by the untouched latter, so `/projects` asked for 1024px and
+ * rendered 638px — its three kanban columns landed at 92px each and the task
+ * titles wrapped one character per line. The outer width is now derived, so
+ * the two cannot disagree.
+ */
 export type WorkspaceLayoutProps = {
   header: (props: WorkspaceHeaderRenderProps) => ReactNode;
   children: ReactNode;
   mainRef?: RefObject<HTMLElement | null>;
   onScroll?: (event: UIEvent<HTMLElement>) => void;
-  maxWidthClass?: string;
-  outerMaxWidthClass?: string;
+  /** Content column width in px; the sidebar column is added on top of it. */
+  contentMaxWidth?: number;
 };
+
+/** Desktop sidebar width, and therefore the shell's gutter beside the content. */
+export const WORKSPACE_SIDEBAR_WIDTH = 312;
+const DEFAULT_CONTENT_MAX_WIDTH = 640;
 
 export function WorkspaceLayout({
   header,
   children,
   mainRef,
   onScroll,
-  maxWidthClass = "max-w-[640px]",
-  outerMaxWidthClass = "max-w-[950px]",
+  contentMaxWidth = DEFAULT_CONTENT_MAX_WIDTH,
 }: WorkspaceLayoutProps) {
   const navigate = useNavigate();
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -178,7 +189,12 @@ export function WorkspaceLayout({
 
   return (
     <div className="h-svh overflow-hidden bg-background">
-      <div className={cn("mx-auto flex h-full w-full", outerMaxWidthClass)}>
+      {/* Sidebar + content, sized from one number: the shell must be at least
+          as wide as the content column plus the sidebar it sits beside. */}
+      <div
+        className="mx-auto flex h-full w-full"
+        style={{ maxWidth: contentMaxWidth + WORKSPACE_SIDEBAR_WIDTH }}
+      >
         <WorkspaceSidebar
           collapsed={sidebarCollapsed}
           explorer={sidebarContent}
@@ -193,11 +209,9 @@ export function WorkspaceLayout({
           })}
           <main
             ref={mainRef}
-            className={cn(
-              "mx-auto min-h-0 w-full flex-1 overflow-y-auto px-5 pt-1 pb-8 lg:px-3",
-              maxWidthClass,
-            )}
+            className="mx-auto min-h-0 w-full flex-1 overflow-y-auto px-5 pt-1 pb-8 lg:px-3"
             onScroll={onScroll}
+            style={{ maxWidth: contentMaxWidth }}
           >
             {children}
           </main>

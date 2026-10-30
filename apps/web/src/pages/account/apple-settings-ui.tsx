@@ -42,7 +42,7 @@ export function SettingsSectionGroup({
           {title}
         </div>
       )}
-      <div className="overflow-hidden rounded-xl border border-border/60 bg-card divide-y divide-border/40 shadow-2xs">
+      <div className="paper overflow-hidden rounded-xl border border-border/60 bg-card divide-y divide-border/40 shadow-xs">
         {children}
       </div>
       {footer && (
@@ -89,7 +89,7 @@ export function SettingsRow({
             icon={Icon}
             color={
               destructive
-                ? "bg-destructive text-destructive-foreground"
+                ? "border-destructive/20 bg-destructive/10 text-destructive"
                 : iconColor
             }
           />
@@ -104,7 +104,7 @@ export function SettingsRow({
             {label}
           </div>
           {description && (
-            <div className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+            <div className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
               {description}
             </div>
           )}

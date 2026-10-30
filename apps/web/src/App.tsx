@@ -6,8 +6,8 @@ import {
   EyeIcon,
   SparklesIcon,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useRef, useState } from "react";
-import type { MemoVisibility } from "@/api";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
+import type { MemoVisibility, Share } from "@/api";
 import { MemoList } from "@/components/memo-list";
 import { PwaUpdatePrompt } from "@/components/pwa-update-prompt";
 import { SpotlightSearch } from "@/components/spotlight-search";
@@ -222,24 +222,54 @@ export function FlareMoApp() {
     : memosQuery.isFetching && !memosQuery.isFetchingNextPage;
   const hasFilters = Boolean(query.trim() || activeTag || untagged);
 
-  const sidebarContent: WorkspaceSidebarContent = {
-    activeTag,
-    hierarchy: tagHierarchyQuery.data?.tags ?? [],
-    hierarchyPending: tagHierarchyQuery.isPending,
-    space,
-    stats,
-    timeZone,
-    untagged,
-    user: currentUserQuery.data,
-    onDeleteTag: (tag) => deleteTagMutation.mutate(tag),
-    onExport: handleExport,
-    onImportFile: handleImportFile,
-    onOpenSettings: () => setAccountSettingsOpen(true),
-    onRenameTag: (from, to) => renameTagMutation.mutate({ from, to }),
-    onTagChange: setActiveTag,
-    onToggleCollapsed: toggleSidebarCollapsed,
-    onUntaggedChange: setUntagged,
-  };
+  // The sidebar tree, the header and the memo list all take these props, and
+  // several of them are memoized on identity. Rebuilding the object — or the
+  // callbacks inside it — on every keystroke or fetch-state flip re-rendered
+  // the whole calendar/heatmap subtree with it.
+  const sidebarContent: WorkspaceSidebarContent = useMemo(
+    () => ({
+      activeTag,
+      hierarchy: tagHierarchyQuery.data?.tags ?? [],
+      hierarchyPending: tagHierarchyQuery.isPending,
+      space,
+      stats,
+      timeZone,
+      untagged,
+      user: currentUserQuery.data,
+      onDeleteTag: (tag) => deleteTagMutation.mutate(tag),
+      onExport: handleExport,
+      onImportFile: handleImportFile,
+      onOpenSettings: () => setAccountSettingsOpen(true),
+      onRenameTag: (from, to) => renameTagMutation.mutate({ from, to }),
+      onTagChange: setActiveTag,
+      onToggleCollapsed: toggleSidebarCollapsed,
+      onUntaggedChange: setUntagged,
+    }),
+    [
+      activeTag,
+      deleteTagMutation,
+      handleExport,
+      handleImportFile,
+      renameTagMutation,
+      setActiveTag,
+      setUntagged,
+      space,
+      stats,
+      tagHierarchyQuery.data?.tags,
+      tagHierarchyQuery.isPending,
+      timeZone,
+      toggleSidebarCollapsed,
+      untagged,
+      currentUserQuery.data,
+    ],
+  );
+
+  // Stable identity: MemoList is memoized, and this callback sits on every
+  // card, so an inline arrow here invalidated every card on each re-render.
+  const handleRevokeShare = useCallback(
+    (share: Share) => revokeShareMutation.mutate(share.id),
+    [revokeShareMutation],
+  );
 
   return (
     <div className="h-svh overflow-hidden bg-background">
@@ -414,7 +444,7 @@ export function FlareMoApp() {
                 onPin={handlePin}
                 onRestore={restoreMemo}
                 onRetry={handleRetry}
-                onRevokeShare={(share) => revokeShareMutation.mutate(share.id)}
+                onRevokeShare={handleRevokeShare}
                 onShare={shareMemo}
                 onTagClick={setActiveTag}
                 onTrash={trashMemo}

@@ -1,5 +1,12 @@
 import type { Editor } from "@tiptap/react";
-import { memo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  memo,
+  type SetStateAction,
+  useCallback,
+  useRef,
+  useState,
+} from "react";
 import type { Attachment, Memo, MemoVisibility, Share } from "@/api";
 import { MemoCardBody } from "@/components/memo-card/memo-card-body";
 import { MemoCardEditor } from "@/components/memo-card/memo-card-editor";
@@ -38,6 +45,12 @@ type MemoCardProps = {
   onRequestDelete?: (memo: Memo) => void;
   onRequestShareImage?: (memo: Memo) => void;
   onRequestVisibility?: (memo: Memo) => void;
+  /**
+   * Reports whether this card holds unsaved editor state. The virtualized
+   * timeline uses it to keep such a card mounted: unmounting mid-edit would
+   * discard the draft the user is still typing.
+   */
+  onEditingChange?: (memoName: string, editing: boolean) => void;
 };
 
 export const MemoCard = memo(function MemoCard({
@@ -61,6 +74,7 @@ export const MemoCard = memo(function MemoCard({
   onRequestDelete,
   onRequestShareImage,
   onRequestVisibility,
+  onEditingChange,
 }: MemoCardProps) {
   // Expansion is per-card and resets on remount; it outlives an edit
   // round-trip, so it stays above the body/editor switch.
@@ -74,6 +88,21 @@ export const MemoCard = memo(function MemoCard({
   const editEditorRef = useRef<Editor | null>(null);
   const isTrashed = memo.state === "trashed";
 
+  // The virtualized list may unmount a card at any scroll offset. While the
+  // editor is open that would throw away the draft, so every write to
+  // `isEditing` — including the one inside useMemoCardActions' save path —
+  // goes through this wrapper, which reports the state to the list.
+  const setEditing = useCallback<Dispatch<SetStateAction<boolean>>>(
+    (value) => {
+      setIsEditing((previous) => {
+        const next = typeof value === "function" ? value(previous) : value;
+        if (next !== previous) onEditingChange?.(memo.name, next);
+        return next;
+      });
+    },
+    [memo.name, onEditingChange],
+  );
+
   const { changeVisibility, id, prefetchDetail, saveEditing, taskInteraction } =
     useMemoCardActions({
       canManage,
@@ -84,24 +113,29 @@ export const MemoCard = memo(function MemoCard({
       onShare,
       onUpdate,
       share,
-      setIsEditing,
+      setIsEditing: setEditing,
       setIsSaving,
     });
 
   const startEditing = () => {
     setDraftContent(memo.content);
-    setIsEditing(true);
+    setEditing(true);
   };
+
+  const stopEditing = () => setEditing(false);
+  const beginEditing = startEditing;
 
   return (
     <article
       data-memo-id={memo.id}
       className={cn(
-        "group relative flex w-full flex-col gap-2 rounded-xl border border-border/50 bg-card/60 px-3.5 py-4 text-card-foreground [content-visibility:auto] [contain-intrinsic-size:auto_120px] motion-safe:animate-rise motion-safe:transition-[background-color,border-color,transform,box-shadow] motion-safe:duration-150 hover:border-border hover:bg-card hover:shadow-xs motion-safe:hover:-translate-y-px",
+        "paper group relative flex w-full flex-col gap-2 rounded-xl border border-border/60 bg-card px-4 py-3.5 text-card-foreground shadow-xs [content-visibility:auto] [contain-intrinsic-size:auto_120px] motion-safe:animate-rise motion-safe:transition-[border-color,box-shadow] motion-safe:duration-150 hover:border-border hover:shadow-sm sm:px-5 sm:py-4",
+        // Pinned: a slim inset ember bar (one of the four places the brand
+        // gradient is allowed), instead of a thick colored border.
         memo.pinned &&
-          "border-l-brand-500 border-l-[3px] dark:border-l-brand-400 bg-card",
-        isFocused && "ring-2 ring-brand-400/60 shadow-xs bg-card",
-        isEditing && "bg-card shadow-xs ring-1 ring-brand-400/40",
+          "before:pointer-events-none before:absolute before:inset-y-4 before:start-0 before:w-[3px] before:rounded-e-full before:bg-brand-gradient",
+        isFocused && "border-ring/60 ring-3 ring-ring/20",
+        isEditing && "border-ring/50 shadow-sm ring-3 ring-ring/15",
       )}
       style={{ animationDelay: `${Math.min(index, 7) * 35}ms` }}
     >
@@ -116,7 +150,7 @@ export const MemoCard = memo(function MemoCard({
         onHardDelete={onHardDelete}
         onPin={onPin}
         onRestore={onRestore}
-        onStartEditing={startEditing}
+        onStartEditing={beginEditing}
         onTrash={onTrash}
         share={share}
         onShare={onShare}
@@ -134,7 +168,7 @@ export const MemoCard = memo(function MemoCard({
           setIsUploadingInline={setIsUploadingInline}
           editorRef={editEditorRef}
           memoName={memo.name}
-          onCancel={() => setIsEditing(false)}
+          onCancel={stopEditing}
           onContentChange={setDraftContent}
           onSave={saveEditing}
         />

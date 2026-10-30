@@ -5,10 +5,10 @@ import {
   CalendarDaysIcon,
   ChevronRightIcon,
   FileTextIcon,
-  FolderKanbanIcon,
   FootprintsIcon,
   HashIcon,
   LayoutGridIcon,
+  ListChecksIcon,
   MicIcon,
   PencilIcon,
   Trash2Icon,
@@ -40,6 +40,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/i18n";
 import { currentStreak } from "@/lib/activity";
@@ -76,6 +78,18 @@ type FlareMoExplorerProps = {
   onNavigate?: () => void;
 };
 
+/*
+ * Ember 2 sidebar item. Inactive rows are quiet ink; the active row is a
+ * raised paper chip (card surface + hairline ring + xs shadow) with the icon
+ * in ember, so "where am I" reads without washing the row in brand color.
+ */
+const NAV_ITEM =
+  "flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] text-foreground/70 outline-none transition-[background-color,color,box-shadow] duration-150 hover:bg-muted/70 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/25 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground [&>svg]:transition-colors";
+const NAV_ACTIVE = {
+  className:
+    "!bg-card !text-foreground font-medium shadow-xs ring-1 ring-border/70 dark:!bg-muted dark:ring-border [&>svg]:!text-primary",
+};
+
 export const FlareMoExplorer = memo(function FlareMoExplorer({
   activeTag,
   footer,
@@ -109,13 +123,20 @@ export const FlareMoExplorer = memo(function FlareMoExplorer({
 
   return (
     <aside className="flex min-h-full flex-col px-3 py-4 text-sm">
-      <header className="mb-5 flex items-center justify-between gap-2 px-1">
+      {/* Sticky so the account menu stays reachable: the tag list routinely
+          runs past the viewport (1481px of content in a 960px column), and
+          scrolling to the bottom used to take the user's own entry point with
+          it. The hairline is what makes that legible — without an edge, a tag
+          clipped by the sticky row reads as a rendering fault rather than as
+          something scrolled underneath. `-mx-3 px-3` covers the column's
+          gutters so tags pass behind the row instead of beside it. */}
+      <header className="sticky top-0 z-10 -mx-3 mb-4 flex items-center justify-between gap-2 border-b border-border/50 bg-background px-4 py-2">
         {header}
         {headerAction}
       </header>
 
       <section className="mb-3 px-1 motion-safe:animate-rise">
-        <div className="grid grid-cols-3 divide-x divide-border/60 rounded-xl border border-border/60 bg-muted/20 py-2.5 shadow-2xs">
+        <div className="paper grid grid-cols-3 divide-x divide-border/60 rounded-xl border border-border/60 bg-card py-3 shadow-xs">
           <StatCell label={t("explorer.records")} value={stats.counts.total} />
           <StatCell label={t("explorer.tags")} value={stats.tags.length} />
           <StatCell label={t("explorer.streak")} value={streak} />
@@ -138,116 +159,90 @@ export const FlareMoExplorer = memo(function FlareMoExplorer({
 
       <nav
         aria-label={t("sidebar.navigation")}
-        className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2.5"
+        className="mt-3 flex flex-col gap-0.5 border-t border-border/60 pt-3"
       >
         <Link
           activeOptions={{ exact: true }}
-          activeProps={{
-            className: "!bg-accent !text-accent-foreground font-medium",
-          }}
-          className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground motion-safe:transition-[background-color,color,transform] motion-safe:duration-150 hover:bg-muted hover:text-foreground motion-safe:hover:translate-x-0.5"
+          activeProps={NAV_ACTIVE}
+          className={NAV_ITEM}
           onClick={onNavigate}
-          search={{
-            ...TIMELINE_SEARCH,
-          }}
+          search={{ ...TIMELINE_SEARCH }}
           to="/"
         >
-          <LayoutGridIcon className="size-4 shrink-0" />
+          <LayoutGridIcon />
           <span className="min-w-0 flex-1 truncate">{t("nav.allMemos")}</span>
         </Link>
         <Link
-          activeProps={{
-            className: "!bg-accent !text-accent-foreground font-medium",
-          }}
-          className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground motion-safe:transition-[background-color,color,transform] motion-safe:duration-150 hover:bg-muted hover:text-foreground motion-safe:hover:translate-x-0.5"
+          activeProps={NAV_ACTIVE}
+          className={NAV_ITEM}
           onClick={onNavigate}
           to="/review/daily"
         >
-          <CalendarDaysIcon className="size-4 shrink-0" />
+          <CalendarDaysIcon />
           <span className="min-w-0 flex-1 truncate">
             {t("nav.dailyReview")}
           </span>
         </Link>
         <Link
-          activeProps={{
-            className: "!bg-accent !text-accent-foreground font-medium",
-          }}
-          className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground motion-safe:transition-[background-color,color,transform] motion-safe:duration-150 hover:bg-muted hover:text-foreground motion-safe:hover:translate-x-0.5"
+          activeProps={NAV_ACTIVE}
+          className={NAV_ITEM}
           onClick={onNavigate}
           to="/review/walk"
         >
-          <FootprintsIcon className="size-4 shrink-0" />
+          <FootprintsIcon />
           <span className="min-w-0 flex-1 truncate">{t("nav.randomWalk")}</span>
         </Link>
         {captureStatus.data?.available && (
           <Link
-            activeProps={{
-              className: "!bg-accent !text-accent-foreground font-medium",
-            }}
-            className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground motion-safe:transition-[background-color,color,transform] motion-safe:duration-150 hover:bg-muted hover:text-foreground motion-safe:hover:translate-x-0.5"
+            activeProps={NAV_ACTIVE}
+            className={NAV_ITEM}
             onClick={onNavigate}
             to="/capture"
           >
-            <MicIcon className="size-4 shrink-0" />
+            <MicIcon />
             <span className="min-w-0 flex-1 truncate">{t("nav.capture")}</span>
           </Link>
         )}
         <Link
-          activeProps={{
-            className: "!bg-accent !text-accent-foreground font-medium",
-          }}
-          className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground motion-safe:transition-[background-color,color,transform] motion-safe:duration-150 hover:bg-muted hover:text-foreground motion-safe:hover:translate-x-0.5"
+          activeProps={NAV_ACTIVE}
+          className={NAV_ITEM}
           onClick={onNavigate}
           to="/memory"
         >
-          <BrainIcon className="size-4 shrink-0" />
+          <BrainIcon />
           <span className="min-w-0 flex-1 truncate">{t("nav.memory")}</span>
         </Link>
         <Link
-          activeProps={{
-            className: "!bg-accent !text-accent-foreground font-medium",
-          }}
-          className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={onNavigate}
-          to="/team-projects"
-        >
-          <FolderKanbanIcon className="size-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">
-            {t("nav.teamProjects")}
-          </span>
-        </Link>
-        <Link
-          activeProps={{
-            className: "!bg-accent !text-accent-foreground font-medium",
-          }}
-          className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground motion-safe:transition-[background-color,color,transform] motion-safe:duration-150 hover:bg-muted hover:text-foreground motion-safe:hover:translate-x-0.5"
+          activeProps={NAV_ACTIVE}
+          className={NAV_ITEM}
           onClick={onNavigate}
           to="/projects"
         >
-          <FolderKanbanIcon className="size-4 shrink-0" />
+          <ListChecksIcon />
           <span className="min-w-0 flex-1 truncate">{t("nav.projects")}</span>
         </Link>
         <Link
-          activeProps={{
-            className: "!bg-accent !text-accent-foreground font-medium",
-          }}
-          className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-muted-foreground motion-safe:transition-[background-color,color,transform] motion-safe:duration-150 hover:bg-muted hover:text-foreground motion-safe:hover:translate-x-0.5"
+          activeProps={NAV_ACTIVE}
+          className={NAV_ITEM}
           onClick={onNavigate}
           to="/articles"
         >
-          <FileTextIcon className="size-4 shrink-0" />
+          <FileTextIcon />
           <span className="min-w-0 flex-1 truncate">{t("nav.articles")}</span>
         </Link>
       </nav>
 
-      <section className="mt-5 flex flex-col gap-2 px-1">
+      <section className="mt-5 flex flex-col gap-1.5 px-1">
+        <h3 className="px-2 pb-0.5 text-xs font-medium text-muted-foreground">
+          {t("explorer.tags")}
+        </h3>
         <button
           aria-pressed={untagged}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left motion-safe:transition-colors motion-safe:duration-150",
             untagged
-              ? "bg-brand-100 text-brand-700 dark:bg-brand-400/12 dark:text-brand-200"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              ? "bg-card font-medium text-foreground shadow-xs ring-1 ring-border/70 dark:bg-muted"
+              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
           )}
           type="button"
           onClick={() => {
@@ -350,10 +345,10 @@ function TagTree({
       <div className="flex flex-col" key={name}>
         <div
           className={cn(
-            "group flex items-center gap-1 rounded-md py-0.5 pr-1 text-xs motion-safe:transition-colors motion-safe:duration-150",
+            "group flex h-7 items-center gap-1 rounded-md pe-1 text-[13px] motion-safe:transition-colors motion-safe:duration-150",
             isActive
-              ? "bg-brand-100 text-brand-700 dark:bg-brand-400/12 dark:text-brand-200"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              ? "bg-card font-medium text-foreground shadow-xs ring-1 ring-border/70 dark:bg-muted"
+              : "text-foreground/70 hover:bg-muted/70 hover:text-foreground",
           )}
           style={{ paddingLeft: `${depth * 0.75}rem` }}
         >
@@ -366,7 +361,7 @@ function TagTree({
                 : undefined
             }
             className={cn(
-              "flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground",
+              "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 hover:text-foreground",
               !hasChildren && "invisible",
             )}
             type="button"
@@ -388,31 +383,37 @@ function TagTree({
               onNavigate?.();
             }}
           >
-            <HashIcon className="shrink-0 opacity-50" />
+            <HashIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
             <span className="truncate">{label}</span>
             {node.count > 1 && (
-              <span className="tabular-nums opacity-60">{node.count}</span>
+              <span className="ms-auto ps-1 text-xs tabular-nums text-muted-foreground/70">
+                {node.count}
+              </span>
             )}
           </button>
           <div className="flex shrink-0 items-center gap-0.5 opacity-0 motion-safe:transition-opacity motion-safe:duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-            <button
+            <Button
               aria-label={t("explorer.renameTag")}
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              className="size-5 text-muted-foreground hover:text-foreground"
+              onClick={() => setEditing(name)}
+              size="icon-xs"
               title={t("explorer.renameTag")}
               type="button"
-              onClick={() => setEditing(name)}
+              variant="ghost"
             >
-              <PencilIcon className="h-3 w-3" />
-            </button>
-            <button
+              <PencilIcon className="size-3" />
+            </Button>
+            <Button
               aria-label={t("explorer.deleteTag")}
-              className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+              className="size-5 text-muted-foreground hover:text-destructive"
+              onClick={() => setDeleteTarget(name)}
+              size="icon-xs"
               title={t("explorer.deleteTag")}
               type="button"
-              onClick={() => setDeleteTarget(name)}
+              variant="ghost"
             >
-              <Trash2Icon className="h-3 w-3" />
-            </button>
+              <Trash2Icon className="size-3" />
+            </Button>
           </div>
         </div>
         {editing === name && (
@@ -499,28 +500,21 @@ function TagRenameInput({
         else onCancel();
       }}
     >
-      <input
+      <Input
         aria-label={t("explorer.renameTagLabel")}
-        className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-7 text-xs md:text-xs"
         onChange={(event) => setValue(event.target.value)}
         placeholder={t("explorer.renameTagPlaceholder")}
         ref={inputRef}
         value={value}
       />
       <div className="flex gap-1">
-        <button
-          className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:opacity-90"
-          type="submit"
-        >
+        <Button size="xs" type="submit">
           {t("common.save")}
-        </button>
-        <button
-          className="rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
-          type="button"
-          onClick={onCancel}
-        >
+        </Button>
+        <Button onClick={onCancel} size="xs" type="button" variant="ghost">
           {t("common.cancel")}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -529,7 +523,7 @@ function TagRenameInput({
 function StatCell({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex flex-col items-center justify-center px-1 text-center">
-      <div className="font-heading text-xl leading-none font-semibold tabular-nums tracking-tight text-foreground">
+      <div className="text-lg leading-none font-semibold tabular-nums tracking-tight text-foreground">
         {value}
       </div>
       <div className="mt-1.5 text-xs text-muted-foreground">{label}</div>

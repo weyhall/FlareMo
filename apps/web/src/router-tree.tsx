@@ -13,13 +13,12 @@ import {
   listArticles,
   listMemories,
   listProjects,
-  listTasks,
 } from "@/api";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { isRtlLocale, useI18n } from "@/i18n";
 import { todayKey } from "@/lib/calendar-date";
-import { queryKeys } from "@/lib/query-keys";
+import { allTasksQuery, isTaskView, type TaskView } from "@/lib/task-views";
 import { AuthenticatedRoute } from "@/routes/authenticated-route";
 import { indexRoute } from "@/routes/index-route";
 import { rootRoute } from "@/routes/root-route";
@@ -102,11 +101,6 @@ const RandomWalkPage = lazy(() =>
 const MemoryPage = lazy(() =>
   import("@/pages/memory-page").then((module) => ({
     default: module.MemoryPage,
-  })),
-);
-const TeamProjectsPage = lazy(() =>
-  import("@/pages/team-projects-page").then((module) => ({
-    default: module.TeamProjectsPage,
   })),
 );
 const ProjectsPage = lazy(() =>
@@ -336,6 +330,11 @@ const accountRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/account",
   component: AccountRoutePage,
+  // Deep links (e.g. the capture page's "enable voice" hint) can open a
+  // specific settings section.
+  validateSearch: (search: Record<string, unknown>): { section?: string } => ({
+    section: typeof search.section === "string" ? search.section : undefined,
+  }),
 });
 
 function DailyReviewRoutePage() {
@@ -417,6 +416,17 @@ function ProjectsRoutePage() {
 const projectsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects",
+  // A to-do view (today / upcoming / all) or one project, so reminders and
+  // memo badges can deep-link to the exact list.
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { view?: TaskView; project?: string } => ({
+    view: isTaskView(search.view) ? search.view : undefined,
+    project:
+      typeof search.project === "string" && search.project
+        ? search.project
+        : undefined,
+  }),
   component: ProjectsRoutePage,
   loader: ({ context }) => {
     warmQuery(
@@ -426,68 +436,8 @@ const projectsRoute = createRoute({
       }),
     );
     // Same key as the board's default all-tasks view and the mini calendar.
-    warmQuery(
-      context.queryClient.ensureQueryData({
-        queryKey: queryKeys.tasks.all,
-        queryFn: () => listTasks(),
-      }),
-    );
+    warmQuery(context.queryClient.ensureQueryData(allTasksQuery));
   },
-});
-
-function TeamProjectsRoutePage() {
-  return (
-    <AuthenticatedRoute>
-      <Suspense fallback={<RouteLoading />}>
-        <TeamProjectsPage />
-      </Suspense>
-    </AuthenticatedRoute>
-  );
-}
-
-const teamProjectsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/team-projects",
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): {
-    project?: string;
-    edit?: boolean;
-    new?: string;
-    view?: string;
-    member?: string;
-    phase?: string;
-    q?: string;
-    owner?: string;
-    group?: string;
-  } => {
-    const value = (key: string) => {
-      const raw = search[key];
-      return typeof raw === "string" || typeof raw === "number"
-        ? String(raw)
-        : undefined;
-    };
-    return {
-      project: value("project"),
-      // Only ever emit `edit` when it is on. Writing `false` here made the
-      // router serialize `edit=false` into the URL on every visit, which changed
-      // the address the auth guard had just captured as the post-sign-in
-      // destination (and added noise to otherwise clean deep links).
-      edit: [true, 1, "1", "true"].includes(
-        search.edit as string | number | boolean,
-      )
-        ? true
-        : undefined,
-      new: value("new"),
-      view: value("view"),
-      member: value("member"),
-      phase: value("phase"),
-      q: value("q"),
-      owner: value("owner"),
-      group: value("group"),
-    };
-  },
-  component: TeamProjectsRoutePage,
 });
 
 function CaptureRoutePage() {
@@ -570,7 +520,6 @@ const router = createRouter({
     randomWalkRoute,
     memoryRoute,
     projectsRoute,
-    teamProjectsRoute,
     captureRoute,
     articlesRoute,
     articleEditRoute,

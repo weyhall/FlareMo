@@ -13,6 +13,7 @@ import {
   shares,
 } from "@flaremo/db";
 import { and, asc, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
+import { chunkForD1, d1IdsPerStatement } from "./d1-limits";
 import { NotFoundError } from "./errors";
 import { importData } from "./import-export";
 
@@ -204,22 +205,21 @@ export async function expireStaleDataTasks(
     )
     .all();
   if (stale.length === 0) return 0;
-  await db
-    .update(dataTasks)
-    .set({
-      status: "failed",
-      errorCode: "task_expired",
-      errorMessage:
-        "Task lease expired before completion; the request was interrupted.",
-      completedAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-    })
-    .where(
-      inArray(
-        dataTasks.id,
-        stale.map((row) => row.id),
-      ),
-    );
+  const staleIds = stale.map((row) => row.id);
+  // One bound parameter per id; chunk so a long-stalled queue still drains.
+  for (const idChunk of chunkForD1(staleIds, d1IdsPerStatement())) {
+    await db
+      .update(dataTasks)
+      .set({
+        status: "failed",
+        errorCode: "task_expired",
+        errorMessage:
+          "Task lease expired before completion; the request was interrupted.",
+        completedAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      })
+      .where(inArray(dataTasks.id, idChunk));
+  }
   return stale.length;
 }
 
@@ -246,7 +246,9 @@ export async function deleteExpiredDataTasks(
     .all();
   if (expired.length === 0) return [];
   const ids = expired.map((row) => row.id);
-  await db.delete(dataTasks).where(inArray(dataTasks.id, ids));
+  for (const idChunk of chunkForD1(ids, d1IdsPerStatement())) {
+    await db.delete(dataTasks).where(inArray(dataTasks.id, idChunk));
+  }
   return ids;
 }
 
@@ -348,8 +350,9 @@ export async function streamExportData(
   // Relations restricted to memos owned by the user.
   const relationRecords: string[] = [];
   const memoIdList = Array.from(allMemoIds);
-  for (let offset = 0; offset < memoIdList.length; offset += pageSize) {
-    const memoIdChunk = memoIdList.slice(offset, offset + pageSize);
+  // `pageSize` (500) is the export page, not a safe binding count: an
+  // `inArray` of 500 ids is five times D1's 100-parameter ceiling.
+  for (const memoIdChunk of chunkForD1(memoIdList, d1IdsPerStatement())) {
     const relationRows = await db
       .select()
       .from(memoRelations)

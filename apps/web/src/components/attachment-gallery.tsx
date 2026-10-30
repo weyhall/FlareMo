@@ -4,7 +4,7 @@ import type { Attachment } from "@/api";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { useI18n } from "@/i18n";
 import { attachmentImageDimensions } from "@/lib/attachment-refs";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 function GalleryItem({ attachment }: { attachment: Attachment }) {
   const { t } = useI18n();
@@ -40,7 +40,7 @@ function GalleryItem({ attachment }: { attachment: Attachment }) {
                 height={dimensions?.height}
                 loading="lazy"
                 onError={() => setFailed(true)}
-                src={attachment.preview_url}
+                src={attachment.thumbnail_url ?? attachment.preview_url}
                 style={
                   dimensions
                     ? {
@@ -83,16 +83,116 @@ function GalleryItem({ attachment }: { attachment: Attachment }) {
   );
 }
 
+/**
+ * One image tile. A lone image keeps its own shape (capped in height); two or
+ * more become square tiles, cropped to fill, so a note with several photos
+ * reads as one compact grid instead of a tall stack.
+ */
+function ImageTile({
+  attachment,
+  tiled,
+}: {
+  attachment: Attachment;
+  tiled: boolean;
+}) {
+  const { t } = useI18n();
+  const [failed, setFailed] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const dimensions = attachmentImageDimensions(attachment);
+  if (failed) {
+    return (
+      <p
+        className={cn(
+          "flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-4 text-xs text-muted-foreground",
+          tiled && "aspect-square justify-center px-2 text-center",
+        )}
+      >
+        <CircleAlertIcon className="size-4 shrink-0" />
+        {!tiled && t("attachment.unavailable")}
+      </p>
+    );
+  }
+  return (
+    <>
+      <button
+        aria-label={attachment.filename}
+        className={cn(
+          "block cursor-zoom-in overflow-hidden rounded-lg border bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          tiled ? "aspect-square w-full" : "w-fit max-w-full",
+        )}
+        type="button"
+        onClick={() => setLightboxOpen(true)}
+      >
+        <img
+          alt={attachment.filename}
+          className={cn(
+            "motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-out-expo motion-safe:hover:scale-[1.015]",
+            tiled
+              ? "size-full object-cover"
+              : "h-auto max-h-[28rem] w-auto max-w-full object-contain",
+          )}
+          height={dimensions?.height}
+          loading="lazy"
+          onError={() => setFailed(true)}
+          src={attachment.thumbnail_url ?? attachment.preview_url}
+          style={
+            !tiled && dimensions
+              ? { aspectRatio: `${dimensions.width} / ${dimensions.height}` }
+              : undefined
+          }
+          width={dimensions?.width}
+        />
+      </button>
+      <ImageLightbox
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        src={attachment.preview_url}
+        alt={attachment.filename}
+        downloadUrl={attachment.download_url}
+        filename={attachment.filename}
+      />
+    </>
+  );
+}
+
+/**
+ * A memo's attachments: images as a grid (up to three across, two across for
+ * two or four so the grid stays square), then audio and files as rows.
+ */
 export function AttachmentGallery({
   attachments,
 }: {
   attachments: Attachment[];
 }) {
   if (attachments.length === 0) return null;
-
+  const images = attachments.filter((item) =>
+    item.content_type?.startsWith("image/"),
+  );
+  const others = attachments.filter(
+    (item) => !item.content_type?.startsWith("image/"),
+  );
+  const tiled = images.length > 1;
+  const twoAcross = images.length === 2 || images.length === 4;
   return (
     <div className="flex flex-col gap-2">
-      {attachments.map((attachment) => (
+      {images.length > 0 && (
+        <div
+          className={cn(
+            tiled && "grid gap-1.5",
+            tiled &&
+              (twoAcross ? "max-w-sm grid-cols-2" : "max-w-md grid-cols-3"),
+          )}
+        >
+          {images.map((attachment) => (
+            <ImageTile
+              attachment={attachment}
+              key={attachment.name}
+              tiled={tiled}
+            />
+          ))}
+        </div>
+      )}
+      {others.map((attachment) => (
         <GalleryItem attachment={attachment} key={attachment.name} />
       ))}
     </div>

@@ -227,6 +227,16 @@ export async function listMemoryReview(db: FlareMoDb, user: UserRow) {
   );
 }
 
+/**
+ * Ceiling for one memory's sub-resource reads (revisions, evidence, events,
+ * relations). These tables only grow — evidence is appended on every
+ * confirmation and events on every lifecycle transition — and the endpoints
+ * used to return the entire history in a single response. Newest-first plus a
+ * limit keeps the payload bounded; callers that need older history page
+ * through the dedicated endpoints.
+ */
+const MEMORY_SUBRESOURCE_LIMIT = 200;
+
 export async function listMemoryRevisions(
   db: FlareMoDb,
   user: UserRow,
@@ -242,7 +252,8 @@ export async function listMemoryRevisions(
         eq(memoryRevisions.userId, user.id),
       ),
     )
-    .orderBy(desc(memoryRevisions.createdAt));
+    .orderBy(desc(memoryRevisions.createdAt))
+    .limit(MEMORY_SUBRESOURCE_LIMIT);
   return rows.map(memoryRevisionToDto);
 }
 
@@ -264,7 +275,8 @@ export async function listMemoryRelations(
         ),
       ),
     )
-    .orderBy(desc(memoryRelations.createdAt));
+    .orderBy(desc(memoryRelations.createdAt))
+    .limit(MEMORY_SUBRESOURCE_LIMIT);
   return rows.map(memoryRelationToDto);
 }
 
@@ -283,7 +295,8 @@ export async function listMemoryEvidence(
         eq(memoryEvidence.userId, user.id),
       ),
     )
-    .orderBy(desc(memoryEvidence.createdAt));
+    .orderBy(desc(memoryEvidence.createdAt))
+    .limit(MEMORY_SUBRESOURCE_LIMIT);
   return rows.map(memoryEvidenceToDto);
 }
 
@@ -305,41 +318,44 @@ export async function getMemoryLineage(
           eq(memoryItems.factKey, current.factKey),
         ),
       )
-      .orderBy(desc(memoryItems.createdAt));
+      .orderBy(desc(memoryItems.createdAt))
+      .limit(MEMORY_SUBRESOURCE_LIMIT);
   }
 
-  const revisions = await db
-    .select()
-    .from(memoryRevisions)
-    .where(
-      and(
-        eq(memoryRevisions.memoryId, memoryId),
-        eq(memoryRevisions.userId, user.id),
-      ),
-    )
-    .orderBy(desc(memoryRevisions.createdAt));
-
-  const evidenceRows = await db
-    .select()
-    .from(memoryEvidence)
-    .where(
-      and(
-        eq(memoryEvidence.memoryId, memoryId),
-        eq(memoryEvidence.userId, user.id),
-      ),
-    )
-    .orderBy(desc(memoryEvidence.createdAt));
-
-  const eventRows = await db
-    .select()
-    .from(memoryEvents)
-    .where(
-      and(
-        eq(memoryEvents.memoryId, memoryId),
-        eq(memoryEvents.userId, user.id),
-      ),
-    )
-    .orderBy(desc(memoryEvents.createdAt));
+  // Three independent reads; running them serially tripled the latency of the
+  // lineage view for no reason.
+  const [revisions, evidenceRows, eventRows] = await Promise.all([
+    db
+      .select()
+      .from(memoryRevisions)
+      .where(
+        and(
+          eq(memoryRevisions.memoryId, memoryId),
+          eq(memoryRevisions.userId, user.id),
+        ),
+      )
+      .orderBy(desc(memoryRevisions.createdAt)),
+    db
+      .select()
+      .from(memoryEvidence)
+      .where(
+        and(
+          eq(memoryEvidence.memoryId, memoryId),
+          eq(memoryEvidence.userId, user.id),
+        ),
+      )
+      .orderBy(desc(memoryEvidence.createdAt)),
+    db
+      .select()
+      .from(memoryEvents)
+      .where(
+        and(
+          eq(memoryEvents.memoryId, memoryId),
+          eq(memoryEvents.userId, user.id),
+        ),
+      )
+      .orderBy(desc(memoryEvents.createdAt)),
+  ]);
 
   return {
     current: memoryToDto(current),

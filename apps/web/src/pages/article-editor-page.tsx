@@ -13,12 +13,13 @@ import {
   ListIcon,
   ListOrderedIcon,
   ListTodoIcon,
-  Loader2Icon,
   MinusIcon,
+  MoreHorizontalIcon,
   PencilIcon,
   QuoteIcon,
   StrikethroughIcon,
   TableIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -32,9 +33,26 @@ import {
 import { ArticleEditor, extractImageFiles } from "@/components/article-editor";
 import { ArticlePublishDialog } from "@/components/article-publish-dialog";
 import { ArticleShikiBody } from "@/components/article-shiki-body";
+import { QueryErrorState } from "@/components/query-error-state";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { useI18n } from "@/i18n";
 import { uploadAndInsertImages } from "@/lib/rich-editor-upload";
 
@@ -48,6 +66,25 @@ type SaveState = "idle" | "dirty" | "saving" | "saved";
  * inline images survive the orphan GC), and every keystroke lands in a
  * 2s-debounced PATCH that also flushes on unmount / beforeunload.
  */
+/**
+ * Two bodies are the same article when they differ only in trailing blank
+ * lines: TipTap re-serializes markdown on load (a list gains a closing blank
+ * line), and saving that would bump updated_at on every open.
+ */
+function sameArticleBody(a: string, b: string) {
+  return a.trimEnd() === b.trimEnd();
+}
+
+/** Characters of prose, the way Chinese writing is counted: markup and
+ * whitespace do not count. */
+function countArticleChars(markdown: string) {
+  return markdown
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[#>*_`~|\-[\]]/g, "")
+    .replace(/\s+/g, "").length;
+}
+
 export function ArticleEditorPage({ articleId }: { articleId: string }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -63,6 +100,7 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
   const [content, setContent] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [savedArticle, setSavedArticle] = useState<Article | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [isUploadingImages, setIsUploadingImages] = useState(false);
@@ -118,7 +156,8 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
     const next = latestRef.current;
     if (
       !current ||
-      (next.title === current.title && next.content === current.content)
+      (next.title === current.title &&
+        sameArticleBody(next.content, current.content))
     ) {
       // Nothing to persist. TipTap normalizes markdown on mount and the
       // resulting onUpdate schedules a save whose round-trip is a no-op;
@@ -150,7 +189,8 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
     const current = savedArticleRef.current;
     if (
       !current ||
-      (next.title === current.title && next.content === current.content)
+      (next.title === current.title &&
+        sameArticleBody(next.content, current.content))
     ) {
       return;
     }
@@ -194,10 +234,15 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
     }).finally(() => setIsUploadingImages(false));
   };
 
+  // Loading and error share the loaded editor's container so the page does
+  // not jump sideways once the article arrives.
+  const containerClass =
+    "mx-auto flex min-h-svh w-full max-w-3xl flex-col gap-3 px-4 pb-16";
+
   if (articleQuery.isLoading) {
     return (
-      <div className="flex flex-col gap-4 p-6">
-        <Skeleton className="h-10 w-2/3" />
+      <div className={containerClass}>
+        <Skeleton className="h-9 w-2/3" />
         <Skeleton className="h-[50vh] w-full" />
       </div>
     );
@@ -205,8 +250,22 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
 
   if (articleQuery.isError || !article) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">
-        {t("article.loadFailed")}
+      <div className={containerClass}>
+        <header className="flex items-center gap-2">
+          <Button
+            onClick={() => navigate({ to: "/articles" })}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <ArrowLeftIcon className="size-4" data-icon="inline-start" />
+            {t("common.back")}
+          </Button>
+        </header>
+        <QueryErrorState
+          isRetrying={articleQuery.isFetching}
+          onRetry={() => void articleQuery.refetch()}
+        />
       </div>
     );
   }
@@ -215,33 +274,21 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
   const shownArticle = savedArticle ?? article;
 
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-3 px-4 py-6">
-      <header className="flex flex-wrap items-center gap-2">
+    <div className={containerClass}>
+      {/* One quiet bar for state and actions, the page itself for writing:
+          the title is the article's first line, not a form field. */}
+      <header className="flex items-center gap-1 pt-3">
         <Button
           aria-label={t("common.back")}
           onClick={() => navigate({ to: "/articles" })}
-          size="icon"
+          size="icon-sm"
           type="button"
           variant="ghost"
         >
-          <ArrowLeftIcon className="size-4" />
+          <ArrowLeftIcon />
         </Button>
-        <Input
-          aria-label={t("article.titleLabel")}
-          className="h-9 flex-1 border-0 bg-transparent px-2 text-lg font-semibold shadow-none focus-visible:ring-0"
-          onChange={(event) => {
-            // The refs — not React state — are what the debounced save reads
-            // (state is stale inside the timer closure), so both must update
-            // on every keystroke.
-            titleRef.current = event.target.value;
-            setTitle(event.target.value);
-            scheduleSave();
-          }}
-          placeholder={t("article.titlePlaceholder")}
-          value={title}
-        />
         <span
-          className="text-xs text-muted-foreground"
+          className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
           data-article-save-state={saveState}
         >
           {saveState === "saving"
@@ -249,9 +296,14 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
             : saveState === "dirty"
               ? t("article.unsaved")
               : t("article.saved")}
+          <span className="hidden sm:inline">
+            {" · "}
+            {t("article.wordCount", { count: countArticleChars(content) })}
+          </span>
         </span>
         {isPublished && (
           <Button
+            aria-label={t("article.viewPublic")}
             onClick={() =>
               window.open(`/article/${shownArticle.slug}`, "_blank")
             }
@@ -259,27 +311,27 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
             type="button"
             variant="ghost"
           >
-            <ExternalLinkIcon className="size-4" />
-            {t("article.viewPublic")}
+            <ExternalLinkIcon data-icon="inline-start" />
+            <span className="hidden sm:inline">{t("article.viewPublic")}</span>
           </Button>
         )}
         <Button
+          aria-label={
+            previewMode ? t("article.editMode") : t("article.previewAction")
+          }
           onClick={() => setPreviewMode((mode) => !mode)}
           size="sm"
           type="button"
           variant="ghost"
         >
           {previewMode ? (
-            <>
-              <PencilIcon className="size-4" />
-              {t("article.editMode")}
-            </>
+            <PencilIcon data-icon="inline-start" />
           ) : (
-            <>
-              <EyeIcon className="size-4" />
-              {t("article.previewAction")}
-            </>
+            <EyeIcon data-icon="inline-start" />
           )}
+          <span className="hidden sm:inline">
+            {previewMode ? t("article.editMode") : t("article.previewAction")}
+          </span>
         </Button>
         <Button
           disabled={isUploadingImages}
@@ -288,24 +340,58 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
           type="button"
           variant={isPublished ? "outline" : "default"}
         >
-          {isUploadingImages && <Loader2Icon className="size-4 animate-spin" />}
+          {isUploadingImages && <Spinner data-icon="inline-start" />}
           {isPublished
             ? t("article.publishedBadge")
             : t("article.publishAction")}
         </Button>
-        <Button
-          onClick={() => {
-            if (window.confirm(t("article.deleteConfirm"))) {
-              deleteMutation.mutate();
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                aria-label={t("common.more")}
+                size="icon-sm"
+                type="button"
+                variant="ghost"
+              >
+                <MoreHorizontalIcon />
+              </Button>
             }
-          }}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          {t("common.delete")}
-        </Button>
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={deleteMutation.isPending}
+              variant="destructive"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              <Trash2Icon />
+              {t("common.delete")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
+      <textarea
+        aria-label={t("article.titleLabel")}
+        className="field-sizing-content mt-4 w-full resize-none bg-transparent font-heading text-3xl leading-tight font-semibold tracking-tight outline-none placeholder:text-foreground/30"
+        rows={1}
+        onChange={(event) => {
+          // The refs — not React state — are what the debounced save reads
+          // (state is stale inside the timer closure), so both must update
+          // on every keystroke. A title is one line: newlines are dropped.
+          const value = event.target.value.replace(/\n/g, " ");
+          titleRef.current = value;
+          setTitle(value);
+          scheduleSave();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            editorRef.current?.commands.focus("start");
+          }
+        }}
+        placeholder={t("article.titlePlaceholder")}
+        value={title}
+      />
 
       {previewMode ? (
         <div className="memo-markdown min-h-svh px-2 text-[15px] leading-7">
@@ -345,6 +431,26 @@ export function ArticleEditorPage({ articleId }: { articleId: string }) {
         }}
         open={publishOpen}
       />
+      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("article.deleteConfirm")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("article.deleteDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+              variant="destructive"
+            >
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

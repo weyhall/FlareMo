@@ -115,15 +115,18 @@ export function MemoryPage() {
         />
       )}
       onScroll={(event) => {
-        setIsScrolled(event.currentTarget.scrollTop > 4);
+        // Guard the same-value case: a bare setState here re-rendered the
+        // whole memory page on every scroll event, not just at the threshold.
+        const next = event.currentTarget.scrollTop > 4;
+        setIsScrolled((prev) => (prev === next ? prev : next));
       }}
     >
       <div className="flex flex-col gap-3.5 pt-2">
         {/* Pending Review Alert Banner */}
         {reviewCount > 0 && (
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-600 dark:text-amber-400 motion-safe:animate-rise">
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-xs text-warning-emphasis motion-safe:animate-rise">
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <AlertCircleIcon className="size-4 shrink-0 text-amber-500" />
+              <AlertCircleIcon className="size-4 shrink-0" />
               <span className="truncate font-medium">
                 {t("memory.bannerReviewAlert", { count: reviewCount })}
               </span>
@@ -132,7 +135,7 @@ export function MemoryPage() {
               size="sm"
               variant="outline"
               onClick={() => setTab("review")}
-              className="h-7 border-amber-500/30 bg-card px-2.5 text-xs text-amber-600 hover:bg-amber-500/15 dark:text-amber-400"
+              className="border-warning/30 bg-card text-warning-emphasis hover:bg-warning/15 hover:text-warning-emphasis"
             >
               {t("memory.filterReview")}
             </Button>

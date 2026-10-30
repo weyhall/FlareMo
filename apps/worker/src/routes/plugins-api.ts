@@ -1,7 +1,7 @@
-import { getPluginSettings } from "@flaremo/domain";
 import { Hono } from "hono";
 import { getFlareMoDb, type HonoBindings } from "../context";
 import { jsonError } from "../http";
+import { getPluginSettingsCached } from "../settings-cache";
 
 /**
  * Public plugin configuration. The SPA reads this before rendering plugin
@@ -44,7 +44,7 @@ function contentTypeFor(path: string): string {
 pluginsApi.get("/", async (c) => {
   try {
     const db = getFlareMoDb(c.env);
-    const settings = await getPluginSettings(db);
+    const settings = await getPluginSettingsCached(db);
     return c.json(settings);
   } catch (error) {
     return jsonError(c, error);
@@ -76,7 +76,7 @@ pluginsApi.get("/assets/:id/:version/*", async (c) => {
       return c.json({ error: { message: "Not found" } }, 404);
     }
     const db = getFlareMoDb(c.env);
-    const settings = await getPluginSettings(db);
+    const settings = await getPluginSettingsCached(db);
     const installed = settings.installed.some(
       (record) => record.id === id && record.version === version,
     );

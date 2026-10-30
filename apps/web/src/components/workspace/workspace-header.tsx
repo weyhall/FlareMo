@@ -1,4 +1,4 @@
-import { PanelLeftOpenIcon, SearchIcon } from "lucide-react";
+import { PanelLeftOpenIcon } from "lucide-react";
 import type { MemoSpace } from "@/api";
 import type { ExplorerView } from "@/components/flaremo-explorer";
 import { ScopeSwitcher } from "@/components/scope-switcher";
@@ -101,15 +101,9 @@ export function WorkspaceHeader({
             activeQuery={activeQuery}
             onClear={() => setQuery("")}
           />
-          <Button
-            aria-label={t("common.search")}
-            className="md:hidden"
-            size="icon-sm"
-            variant="ghost"
-            onClick={() => setSpotlightOpen(true)}
-          >
-            <SearchIcon />
-          </Button>
+          {/* Small screens search from the box above the timeline, which
+              also carries the semantic toggle; a second icon here was a
+              duplicate way into the same thing. */}
         </div>
       </div>
     </header>

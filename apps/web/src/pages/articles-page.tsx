@@ -3,10 +3,10 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ExternalLinkIcon,
   FileTextIcon,
-  Loader2Icon,
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   createArticle,
@@ -14,6 +14,17 @@ import {
   listArticles,
   restoreArticle,
 } from "@/api";
+import { QueryErrorState } from "@/components/query-error-state";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,9 +37,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { WorkspaceLayout } from "@/components/workspace/workspace-layout";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-page-header";
 import { useI18n } from "@/i18n";
+import { formatDate } from "@/lib/date-format";
 import { stripResourceName } from "@/lib/utils";
 
 /**
@@ -51,6 +64,7 @@ export function ArticlesPage() {
   const { locale, t } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const articlesQuery = useQuery({
     queryKey: ["articles"],
     // include_deleted feeds the recycle-bin affordances below (restore action
@@ -90,13 +104,14 @@ export function ArticlesPage() {
       toast.success(t("article.restored"));
       void queryClient.invalidateQueries({ queryKey: ["articles"] });
     },
+    onError: () => toast.error(t("article.restoreFailed")),
   });
 
   const articles = articlesQuery.data?.articles ?? [];
 
   return (
     <WorkspaceLayout
-      maxWidthClass="max-w-4xl"
+      contentMaxWidth={896}
       header={({
         sidebarCollapsed,
         toggleSidebarCollapsed,
@@ -105,6 +120,7 @@ export function ArticlesPage() {
         explorer,
       }) => (
         <WorkspacePageHeader
+          contentMaxWidth={896}
           actions={
             <Button
               disabled={createMutation.isPending}
@@ -113,7 +129,7 @@ export function ArticlesPage() {
               type="button"
             >
               {createMutation.isPending ? (
-                <Loader2Icon className="size-4 motion-safe:animate-spin" />
+                <Spinner className="size-4" />
               ) : (
                 <PlusIcon className="size-4" />
               )}
@@ -124,7 +140,6 @@ export function ArticlesPage() {
           icon={
             <FileTextIcon className="size-4 shrink-0 text-brand-600 dark:text-brand-400" />
           }
-          maxWidthClass="max-w-4xl"
           mobileSheetOpen={mobileSheetOpen}
           setMobileSheetOpen={setMobileSheetOpen}
           sidebarCollapsed={sidebarCollapsed}
@@ -139,6 +154,12 @@ export function ArticlesPage() {
             <Skeleton className="h-20 w-full" />
             <Skeleton className="h-20 w-full" />
           </div>
+        )}
+        {articlesQuery.isError && (
+          <QueryErrorState
+            isRetrying={articlesQuery.isFetching}
+            onRetry={() => void articlesQuery.refetch()}
+          />
         )}
         {articlesQuery.data && articles.length === 0 && (
           <Empty className="min-h-72 border border-border/60 bg-card/50 motion-safe:animate-rise">
@@ -169,87 +190,135 @@ export function ArticlesPage() {
         )}
         {articlesQuery.data && articles.length > 0 && (
           <div className="flex flex-col gap-3">
-            {articles.map((article) => (
-              <Card
-                className="py-3 transition-colors hover:bg-muted/40"
-                key={article.id}
-              >
-                <CardHeader className="pb-0">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <button
-                      className="min-w-0 flex-1 truncate text-left font-semibold hover:underline"
-                      onClick={() =>
-                        navigate({
-                          to: "/articles/$articleId/edit",
-                          params: { articleId: editorId(article.id) },
-                        })
-                      }
-                      type="button"
-                    >
-                      {article.title || t("article.untitled")}
-                    </button>
-                    <Badge
-                      variant={
-                        article.status === "published" ? "default" : "secondary"
-                      }
-                    >
-                      {article.status === "published"
-                        ? t("article.publishedBadge")
-                        : t("article.draftBadge")}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex items-center justify-between gap-2 pt-1">
-                  <span className="text-xs text-muted-foreground">
-                    {article.deleted_at
-                      ? t("article.inRecycleBin")
-                      : article.updated_at.slice(0, 10)}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {article.status === "published" && !article.deleted_at && (
-                      <Button
-                        aria-label={t("article.viewPublic")}
+            {articles.map((article) => {
+              const published = article.status === "published";
+              const trashed = Boolean(article.deleted_at);
+              return (
+                <Card
+                  className={
+                    "group relative gap-1.5 py-4 transition-colors " +
+                    (trashed ? "opacity-70" : "hover:bg-muted/30")
+                  }
+                  key={article.id}
+                >
+                  <CardHeader className="gap-1 pb-0">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <button
+                        className="min-w-0 flex-1 truncate text-left font-semibold after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+                        disabled={trashed}
                         onClick={() =>
-                          window.open(`/article/${article.slug}`, "_blank")
+                          navigate({
+                            to: "/articles/$articleId/edit",
+                            params: { articleId: editorId(article.id) },
+                          })
                         }
-                        size="icon"
                         type="button"
-                        variant="ghost"
                       >
-                        <ExternalLinkIcon className="size-4" />
-                      </Button>
+                        {article.title || t("article.untitled")}
+                      </button>
+                      <Badge variant={published ? "success" : "secondary"}>
+                        {published
+                          ? t("article.publishedBadge")
+                          : t("article.draftBadge")}
+                      </Badge>
+                    </CardTitle>
+                    {article.description && (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                        {article.description}
+                      </p>
                     )}
-                    {article.deleted_at ? (
-                      <Button
-                        onClick={() => restoreMutation.mutate(article.id)}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        {t("article.restoreAction")}
-                      </Button>
-                    ) : (
-                      <Button
-                        aria-label={t("common.delete")}
-                        onClick={() => {
-                          if (window.confirm(t("article.deleteConfirm"))) {
-                            deleteMutation.mutate(article.id);
+                  </CardHeader>
+                  <CardContent className="flex items-center justify-between gap-2 pt-0">
+                    <span className="text-xs text-muted-foreground">
+                      {trashed
+                        ? t("article.inRecycleBin")
+                        : published && article.published_at
+                          ? t("article.publishedOn", {
+                              date: formatDate(article.published_at, locale),
+                            })
+                          : t("article.editedOn", {
+                              date: formatDate(article.updated_at, locale),
+                            })}
+                    </span>
+                    {/* Actions sit above the card-wide click target. */}
+                    <div className="relative z-10 flex items-center gap-1">
+                      {published && !trashed && (
+                        <Button
+                          onClick={() =>
+                            window.open(`/article/${article.slug}`, "_blank")
                           }
-                        }}
-                        size="icon"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Trash2Icon className="size-4" />
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <ExternalLinkIcon data-icon="inline-start" />
+                          {t("article.viewPublic")}
+                        </Button>
+                      )}
+                      {trashed ? (
+                        <Button
+                          disabled={
+                            restoreMutation.isPending &&
+                            restoreMutation.variables === article.id
+                          }
+                          onClick={() => restoreMutation.mutate(article.id)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          {t("article.restoreAction")}
+                        </Button>
+                      ) : (
+                        <Button
+                          aria-label={t("common.delete")}
+                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+                          disabled={
+                            deleteMutation.isPending &&
+                            deleteMutation.variables === article.id
+                          }
+                          onClick={() => setConfirmDeleteId(article.id)}
+                          size="icon-sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2Icon />
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
+      <AlertDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("article.deleteConfirm")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("article.deleteDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmDeleteId) deleteMutation.mutate(confirmDeleteId);
+                setConfirmDeleteId(null);
+              }}
+              variant="destructive"
+            >
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </WorkspaceLayout>
   );
 }

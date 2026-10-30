@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2Icon, MailIcon, ShieldCheckIcon } from "lucide-react";
+import { MailIcon, ShieldCheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -13,6 +13,7 @@ import {
   saveOauthSettings,
   testEmailSettings,
 } from "@/api";
+import { QueryErrorState } from "@/components/query-error-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +36,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { useI18n } from "@/i18n";
 import { errorMessage } from "@/lib/error";
@@ -124,6 +126,16 @@ export function EmailSettingsCard() {
     );
   }
 
+  // A failed load must not fall through to a form seeded with defaults.
+  if (!config && settingsQuery.isError) {
+    return (
+      <QueryErrorState
+        isRetrying={settingsQuery.isFetching}
+        onRetry={() => void settingsQuery.refetch()}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <SettingsSectionGroup
@@ -188,12 +200,7 @@ export function EmailSettingsCard() {
                 )
               }
             >
-              {pendingAction === "test" && (
-                <Loader2Icon
-                  className="animate-spin"
-                  data-icon="inline-start"
-                />
-              )}
+              {pendingAction === "test" && <Spinner data-icon="inline-start" />}
               {t("admin.integrations.testEmail")}
             </Button>
           }
@@ -299,10 +306,7 @@ export function EmailSettingsCard() {
               </Button>
               <Button disabled={emailEditingDisabled} type="submit">
                 {pendingAction === "save" && (
-                  <Loader2Icon
-                    className="animate-spin"
-                    data-icon="inline-start"
-                  />
+                  <Spinner data-icon="inline-start" />
                 )}
                 {t("common.save")}
               </Button>
@@ -435,6 +439,23 @@ export function OauthSettingsCard() {
 
   const isGoogleActive = Boolean(config?.previews?.google?.active);
   const isGithubActive = Boolean(config?.previews?.github?.active);
+  if (!config && settingsQuery.isPending) {
+    return (
+      <div className="flex flex-col gap-3 p-4">
+        <Skeleton className="h-12 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+      </div>
+    );
+  }
+  // A failed load must not fall through to rows reading "not configured".
+  if (!config && settingsQuery.isError) {
+    return (
+      <QueryErrorState
+        isRetrying={settingsQuery.isFetching}
+        onRetry={() => void settingsQuery.refetch()}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -621,12 +642,7 @@ export function OauthSettingsCard() {
                 {t("common.cancel")}
               </Button>
               <Button disabled={editingDisabled} type="submit">
-                {busy && (
-                  <Loader2Icon
-                    className="animate-spin"
-                    data-icon="inline-start"
-                  />
-                )}
+                {busy && <Spinner data-icon="inline-start" />}
                 {t("common.save")}
               </Button>
             </DialogFooter>

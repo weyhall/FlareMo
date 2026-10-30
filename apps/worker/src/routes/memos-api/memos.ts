@@ -9,6 +9,10 @@ import {
   updateMemoSchema,
 } from "@flaremo/contracts";
 import {
+  THUMBNAIL_CONTENT_TYPE,
+  thumbnailKeyFor,
+} from "@flaremo/contracts/constants";
+import {
   assertAttachmentStorageQuota,
   bindMemoAttachments,
   createAttachmentMetadata,
@@ -377,6 +381,27 @@ export function registerMemosRoutes(app: Hono<HonoBindings>) {
           contentType: file.type || "application/octet-stream",
         },
       });
+      // Card preview written beside the original under a derived key. It is
+      // pure derivation from `r2Key`, so serving and deleting need no schema
+      // change; `payload.thumbnail` only records that the object exists.
+      const thumbnailPart = formData.get("thumbnail");
+      const hasThumbnail =
+        thumbnailPart instanceof File &&
+        thumbnailPart.size > 0 &&
+        thumbnailPart.type.startsWith("image/");
+      if (hasThumbnail) {
+        await c.env.ATTACHMENTS.put(thumbnailKeyFor(objectKey), thumbnailPart, {
+          httpMetadata: { contentType: THUMBNAIL_CONTENT_TYPE },
+        }).catch(async (error) => {
+          // A missing thumbnail is a degraded card, not a failed upload.
+          console.error(
+            JSON.stringify({
+              message: "thumbnail upload failed",
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        });
+      }
       try {
         const attachment = await createAttachmentMetadata(db, user, {
           memoId: typeof memo === "string" && memo ? memo : null,
@@ -387,17 +412,29 @@ export function registerMemosRoutes(app: Hono<HonoBindings>) {
           r2Key: objectKey,
           etag: object.httpEtag,
           clientId,
-          ...(Object.keys(payload).length > 0 ? { payload } : {}),
+          ...(Object.keys(payload).length > 0 || hasThumbnail
+            ? {
+                payload: hasThumbnail
+                  ? { ...payload, thumbnail: true }
+                  : payload,
+              }
+            : {}),
         });
         if (attachment.r2Key !== objectKey) {
-          await c.env.ATTACHMENTS.delete(objectKey).catch(() => undefined);
+          await c.env.ATTACHMENTS.delete([
+            objectKey,
+            ...(hasThumbnail ? [thumbnailKeyFor(objectKey)] : []),
+          ]).catch(() => undefined);
         }
         return c.json(
           attachmentToDto(attachment),
           attachment.r2Key === objectKey ? 201 : 200,
         );
       } catch (error) {
-        await c.env.ATTACHMENTS.delete(objectKey);
+        await c.env.ATTACHMENTS.delete([
+          objectKey,
+          ...(hasThumbnail ? [thumbnailKeyFor(objectKey)] : []),
+        ]);
         throw error;
       }
     } catch (error) {
@@ -431,7 +468,10 @@ export function registerMemosRoutes(app: Hono<HonoBindings>) {
         attachment,
         bucket: c.env.ATTACHMENTS,
         cacheControl: "private, max-age=3600",
-        inlineRequested: c.req.query("disposition") === "inline",
+        inlineRequested:
+          c.req.query("disposition") === "inline" ||
+          c.req.query("thumbnail") === "true",
+        thumbnailRequested: c.req.query("thumbnail") === "true",
         request: c.req.raw,
       });
       if (!response) {

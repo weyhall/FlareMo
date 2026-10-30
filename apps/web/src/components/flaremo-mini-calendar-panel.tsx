@@ -1,8 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlertCircleIcon } from "lucide-react";
 import { useMemo } from "react";
-import { listTasks } from "@/api";
 import { useI18n } from "@/i18n";
 import {
   buildMonthGrid,
@@ -10,7 +8,7 @@ import {
   todayKey,
   type WeekStart,
 } from "@/lib/calendar-date";
-import { queryKeys } from "@/lib/query-keys";
+import { useAllTasks } from "@/lib/task-views";
 
 // Reminders shown above the time horizon in the explorer: open tasks due today
 // or overdue. Deep-links straight to /projects where the user can manage and
@@ -18,10 +16,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 function useOpenTasks(rangeStart: string, rangeEnd: string) {
   const today = useMemo(() => todayKey(), []);
-  const tasksQuery = useQuery({
-    queryKey: queryKeys.tasks.all,
-    queryFn: () => listTasks(),
-  });
+  const tasksQuery = useAllTasks();
   return useMemo(() => {
     const map = new Map<string, number>();
     let overdue = 0;
@@ -58,6 +53,7 @@ export function MiniCalendarReminders() {
         <Link
           className="mb-1.5 flex items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-brand-700 dark:text-brand-200 bg-brand-100 dark:bg-brand-400/12 motion-safe:transition-colors motion-safe:duration-150 hover:bg-brand-100/80 dark:hover:bg-brand-400/20 focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="mini-calendar-today-notice"
+          search={{ view: "today" }}
           to="/projects"
         >
           <AlertCircleIcon className="shrink-0" />
@@ -67,6 +63,7 @@ export function MiniCalendarReminders() {
       {overdue > 0 && (
         <Link
           className="mb-1 block px-1 text-xs text-destructive underline-offset-2 hover:underline"
+          search={{ view: "today" }}
           to="/projects"
         >
           {t("calendar.overdueCount", { count: overdue })}

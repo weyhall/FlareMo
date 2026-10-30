@@ -3,6 +3,7 @@ import { CheckIcon, CopyIcon, SparklesIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { compileMemory } from "@/api";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -63,6 +64,12 @@ export function MemoryLensDialog({
               <Skeleton className="h-24 w-full" />
               <Skeleton className="h-16 w-full" />
             </div>
+          ) : compileQuery.isError ? (
+            <QueryErrorState
+              className="min-h-40 text-muted-foreground"
+              isRetrying={compileQuery.isFetching}
+              onRetry={() => void compileQuery.refetch()}
+            />
           ) : content.trim() ? (
             <div className="relative rounded-lg border border-border/70 bg-muted/30 p-4">
               <pre className="max-h-[360px] overflow-y-auto font-mono text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">

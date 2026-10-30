@@ -6,6 +6,7 @@ import {
   MIN_PASSWORD_LENGTH,
   NewPasswordFields,
 } from "@/components/new-password-fields";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n";
@@ -49,9 +50,9 @@ export function RecoverPage() {
   if (done) {
     return (
       <AuthPageFrame title={t("recover.title")}>
-        <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
+        <Alert role="status" variant="success">
           {t("recover.success")}
-        </p>
+        </Alert>
         <Button
           className="mt-4 w-full"
           variant="brand"
@@ -98,11 +99,7 @@ export function RecoverPage() {
           onConfirmationChange={setConfirmation}
           onNewPasswordChange={setNewPassword}
         />
-        {formError && (
-          <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            {formError}
-          </p>
-        )}
+        {formError && <Alert variant="destructive">{formError}</Alert>}
         <Button disabled={isSubmitting} type="submit" variant="brand">
           {isSubmitting ? t("recover.submitting") : t("recover.submit")}
         </Button>

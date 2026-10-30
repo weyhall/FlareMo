@@ -1,10 +1,11 @@
 import type { DataTaskDto } from "@flaremo/contracts";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { DownloadIcon, Loader2Icon, RefreshCcwIcon } from "lucide-react";
+import { DownloadIcon, RefreshCcwIcon } from "lucide-react";
 import { downloadExportJson } from "@/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import type { TranslationKey } from "@/i18n";
 import { SettingsSectionGroup } from "./apple-settings-ui";
 
@@ -39,10 +40,7 @@ export function TransferPanel({
               onClick={onCreateExport}
             >
               {createExportIsPending ? (
-                <Loader2Icon
-                  className="animate-spin size-3.5"
-                  data-icon="inline-start"
-                />
+                <Spinner className="size-3.5" data-icon="inline-start" />
               ) : (
                 <DownloadIcon className="size-3.5" data-icon="inline-start" />
               )}
@@ -85,9 +83,8 @@ export function TransferPanel({
                             ? "destructive"
                             : "outline"
                       }
-                      className="text-[10px] h-4 px-1.5"
                     >
-                      {task.status}
+                      {t(`transfer.status.${task.status}`)}
                     </Badge>
                   </div>
                   <p className="truncate text-xs text-muted-foreground mt-0.5">

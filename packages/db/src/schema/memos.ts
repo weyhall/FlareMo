@@ -93,6 +93,13 @@ export const memos = sqliteTable(
     index("memos_recycle_sweep_idx")
       .on(table.deletedAt)
       .where(sql`status = 'trashed'`),
+    // "On this day" matches a month-day with `substr(created_at, 6, 5)`, which
+    // no b-tree can seek into, so the daily cron used to read every normal
+    // memo row — content blob included. This covering index lets that scan
+    // read only the three small columns it projects.
+    index("memos_normal_review_cover_idx")
+      .on(table.createdAt, table.id, table.userId)
+      .where(sql`status = 'normal'`),
   ],
 );
 

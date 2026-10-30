@@ -40,7 +40,7 @@ export function ComposerFileChips({
           className="flex max-w-full items-center gap-2 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
           key={getFileKey(file)}
         >
-          <PaperclipIcon />
+          <PaperclipIcon className="size-3.5 shrink-0" />
           <span className="truncate">{file.name}</span>
           <Button
             aria-label={t("composer.removeFile", { filename: file.name })}

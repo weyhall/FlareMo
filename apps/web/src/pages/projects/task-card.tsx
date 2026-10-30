@@ -17,6 +17,7 @@ import {
 import { type CSSProperties, useState } from "react";
 import { toast } from "sonner";
 import { deleteTask, type Task, type TaskStatus, updateTask } from "@/api";
+import { formatScheduleDay } from "@/components/composer/composer-schedule-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/i18n";
+import { todayKey } from "@/lib/calendar-date";
 import { errorMessage } from "@/lib/error";
 import { queryKeys } from "@/lib/query-keys";
 import { cn, stripResourceName } from "@/lib/utils";
@@ -74,7 +76,7 @@ export function TaskCard({
   task: Task;
   onMutated: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -95,7 +97,14 @@ export function TaskCard({
       );
       return snapshots;
     },
-    onSuccess: () => onMutated(),
+    onSuccess: (_data, input) => {
+      onMutated();
+      // Completing a task ticks its line in the source memo on the server.
+      if (task.source_memo_id && input.status !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.memos.all });
+        void queryClient.invalidateQueries({ queryKey: ["memo-context"] });
+      }
+    },
     onError: (error, _input, snapshots) => {
       for (const [key, value] of snapshots ?? []) {
         queryClient.setQueryData(key, value);
@@ -179,7 +188,7 @@ export function TaskCard({
                     to="/memo/$memoId"
                   />
                 }
-                variant="brand"
+                variant="outline"
               >
                 <NotebookTextIcon />
                 {t("projects.fromMemo")}
@@ -270,9 +279,18 @@ export function TaskCard({
                 </Badge>
               )}
               {task.due_at && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <CalendarDaysIcon data-icon="inline-start" />
-                  {task.due_at}
+                <span
+                  className={cn(
+                    "flex items-center gap-1 text-xs text-muted-foreground",
+                    task.status !== "done" &&
+                      task.due_at.slice(0, 10) < todayKey() &&
+                      "text-destructive",
+                  )}
+                >
+                  <CalendarDaysIcon aria-hidden="true" className="size-3.5" />
+                  {task.due_at.slice(0, 10) === todayKey()
+                    ? t("composer.schedule.today")
+                    : formatScheduleDay(task.due_at.slice(0, 10), locale)}
                 </span>
               )}
             </div>

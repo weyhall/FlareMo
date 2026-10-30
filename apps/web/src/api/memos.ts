@@ -219,3 +219,28 @@ export async function replaceMemoRelations(
     body: JSON.stringify({ relations }),
   });
 }
+
+/** Comments under a memo, oldest first (`id` is the bare memo id). */
+export async function listMemoComments(id: string) {
+  return apiRequest<{ comments: Memo[] }>(
+    `/api/app/memos/${encodeURIComponent(id)}/comments`,
+  );
+}
+
+/** Adds a comment; it inherits the parent memo's visibility. */
+export async function createMemoComment(
+  id: string,
+  input: { content: string; client_id?: string },
+) {
+  return apiRequest<Memo>(`/api/app/memos/${encodeURIComponent(id)}/comments`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** People who can be @mentioned: active team members, without emails. */
+export async function listMentionableUsers() {
+  return apiRequest<{
+    members: { username: string; displayName: string }[];
+  }>("/api/app/team/members");
+}

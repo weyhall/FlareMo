@@ -60,6 +60,7 @@ tasksApi.get("/", zValidator("query", listTasksQuerySchema), async (c) => {
       priority: query.priority,
       dueFrom: query.due_from,
       dueTo: query.due_to,
+      sourceMemoId: query.source_memo_id,
       includeDeleted: query.include_deleted,
       pageSize: query.page_size,
       pageToken: query.page_token,
