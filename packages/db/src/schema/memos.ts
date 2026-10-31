@@ -93,6 +93,13 @@ export const memos = sqliteTable(
     index("memos_recycle_sweep_idx")
       .on(table.deletedAt)
       .where(sql`status = 'trashed'`),
+    // "On this day" matches a month-day with `substr(created_at, 6, 5)`, which
+    // no b-tree can seek into, so the daily cron used to read every normal
+    // memo row — content blob included. This covering index lets that scan
+    // read only the three small columns it projects.
+    index("memos_normal_review_cover_idx")
+      .on(table.createdAt, table.id, table.userId)
+      .where(sql`status = 'normal'`),
   ],
 );
 
@@ -232,6 +239,31 @@ export const memoRelations = sqliteTable(
       table.type,
       table.memoId,
     ),
+  ],
+);
+
+// What the daily review remembers about one memo for its reader: the local
+// day it was last read in the review (so the same note does not come back the
+// next morning, and today's progress survives a reload or another device) and
+// whether the reader asked never to see it there again. Purely derived reader
+// state: losing a row only means a note may resurface sooner.
+export const memoReviewMarks = sqliteTable(
+  "memo_review_marks",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    memoId: text("memo_id")
+      .notNull()
+      .references(() => memos.id, { onDelete: "cascade" }),
+    /** Viewer-local `YYYY-MM-DD` of the last review read, or NULL. */
+    lastReviewedOn: text("last_reviewed_on"),
+    muted: integer("muted", { mode: "boolean" }).notNull().default(false),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.memoId] }),
+    index("memo_review_marks_memo_idx").on(table.memoId),
   ],
 );
 

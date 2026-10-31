@@ -8,7 +8,11 @@ import type {
   RandomMemoResponse,
   RelatedMemosResponse,
   RenameTagResponse,
+  ReviewMarkInput,
+  ReviewSettingsResponse,
+  ReviewSettingsUpdate,
   TagHierarchyResponse,
+  TodayReviewResponse,
   WalkNextResponse,
 } from "@flaremo/contracts";
 import { apiRequest } from "./client";
@@ -142,6 +146,35 @@ export async function getDailyReview(date: string, tzOffsetMinutes: number) {
   );
 }
 
+/** Today's review stack: on this day in past years, then the age ladder. */
+export async function getTodayReview(date: string, tzOffsetMinutes: number) {
+  const query = new URLSearchParams({
+    date,
+    tzOffset: String(tzOffsetMinutes),
+  });
+  return apiRequest<TodayReviewResponse>(
+    `/api/app/review/today?${query.toString()}`,
+  );
+}
+
+export async function markReviewMemo(input: ReviewMarkInput) {
+  return apiRequest<{ ok: true }>("/api/app/review/marks", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getReviewSettings() {
+  return apiRequest<ReviewSettingsResponse>("/api/app/review/settings");
+}
+
+export async function updateReviewSettings(input: ReviewSettingsUpdate) {
+  return apiRequest<ReviewSettingsResponse>("/api/app/review/settings", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function getRandomWalkMemo(exclude: string[] = []) {
   const query = new URLSearchParams();
   if (exclude.length > 0) query.set("exclude", exclude.join(","));
@@ -218,4 +251,29 @@ export async function replaceMemoRelations(
     method: "PATCH",
     body: JSON.stringify({ relations }),
   });
+}
+
+/** Comments under a memo, oldest first (`id` is the bare memo id). */
+export async function listMemoComments(id: string) {
+  return apiRequest<{ comments: Memo[] }>(
+    `/api/app/memos/${encodeURIComponent(id)}/comments`,
+  );
+}
+
+/** Adds a comment; it inherits the parent memo's visibility. */
+export async function createMemoComment(
+  id: string,
+  input: { content: string; client_id?: string },
+) {
+  return apiRequest<Memo>(`/api/app/memos/${encodeURIComponent(id)}/comments`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** People who can be @mentioned: active team members, without emails. */
+export async function listMentionableUsers() {
+  return apiRequest<{
+    members: { username: string; displayName: string }[];
+  }>("/api/app/team/members");
 }

@@ -1,8 +1,10 @@
 import { BrainIcon, EyeIcon, SearchIcon, XIcon } from "lucide-react";
+import { HEADER_SEARCH_FIELD_CLASS } from "@/components/search-field-styles";
 import { Button } from "@/components/ui/button";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-page-header";
 import type { WorkspaceSidebarContent } from "@/components/workspace/workspace-sidebar";
 import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 export function MemoryWorkspaceHeader({
   query,
@@ -25,42 +27,50 @@ export function MemoryWorkspaceHeader({
   return (
     <WorkspacePageHeader
       {...header}
-      icon={<BrainIcon className="size-4 shrink-0 text-brand-500" />}
+      icon={<BrainIcon className="size-4 shrink-0" />}
       title={t("memory.title")}
       actions={
         <>
-          <div className="group flex h-8.5 w-36 sm:w-52 md:w-60 items-center rounded-lg border border-border/60 bg-muted/40 px-2.5 text-xs text-muted-foreground transition-all hover:border-border hover:bg-accent/60 hover:text-foreground shadow-2xs focus-within:border-brand-500/80 focus-within:ring-2 focus-within:ring-brand-500/15 focus-within:bg-background">
-            <SearchIcon className="size-3.5 shrink-0 text-muted-foreground group-focus-within:text-foreground" />
+          <div
+            className={cn(
+              HEADER_SEARCH_FIELD_CLASS,
+              "w-36 gap-2 px-2.5 sm:w-52 md:w-60",
+            )}
+          >
+            <SearchIcon className="size-3.5 shrink-0 text-muted-foreground transition-colors group-focus-within:text-foreground" />
             <input
               type="text"
               aria-label={t("memory.searchPlaceholder")}
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               placeholder={t("memory.searchPlaceholder")}
-              className="ml-2 w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-hidden"
+              className="w-full min-w-0 bg-transparent text-xs text-foreground outline-hidden placeholder:text-muted-foreground"
             />
             {query && (
-              <button
+              <Button
                 type="button"
                 aria-label={t("search.clear")}
                 onClick={() => onQueryChange("")}
-                className="ml-1 rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                className="-me-1.5 size-6 text-muted-foreground"
+                size="icon-xs"
                 title={t("search.clear")}
+                variant="ghost"
               >
-                <XIcon className="size-3" />
-              </button>
+                <XIcon className="size-3.5" />
+              </Button>
             )}
           </div>
 
+          {/* Named, not a bare eye: what the agents actually receive. */}
           <Button
-            size="icon-sm"
+            size="sm"
             variant="ghost"
-            aria-label={t("memory.viewLens")}
             className="text-muted-foreground hover:text-foreground"
             onClick={onOpenLens}
-            title={t("memory.viewLens")}
+            title={t("memory.lensTitle")}
           >
-            <EyeIcon className="size-4" />
+            <EyeIcon data-icon="inline-start" />
+            {t("memory.viewLens")}
           </Button>
         </>
       }

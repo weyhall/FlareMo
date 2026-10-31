@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Zero Servers · Zero Upkeep · 24/7 Global Edge Uptime · Absolute Data Ownership</b><br>
-  For individuals: a quiet, focused thought capture space and second brain. For teams: a shared knowledge base with fine-grained roles.
+  For individuals: a quiet, focused thought capture space and second brain. For teams: a shared space to publish notes to each other, with fine-grained roles.
 </p>
 
 <p align="center">
@@ -31,6 +31,10 @@
 | :---: | :---: | :---: |
 | <img src="./docs/assets/flaremo-desktop-light.png" width="360" alt="FlareMo Desktop Light Mode" /> | <img src="./docs/assets/flaremo-desktop-dark.png" width="360" alt="FlareMo Desktop Dark Mode" /> | <img src="./docs/assets/flaremo-mobile.png" width="168" alt="FlareMo Mobile Mode" /> |
 
+| ✅ To-dos, projects and review | 📄 Articles you can publish |
+| :---: | :---: |
+| <img src="./docs/assets/flaremo-tasks.png" width="560" alt="To-dos, projects and review" /> | <img src="./docs/assets/flaremo-articles.png" width="560" alt="Articles you can publish" /> |
+
 <sub>Actual live screenshots: seamless light/dark mode switching and full-featured mobile responsiveness. Every feature shown is wired to working backend capabilities.</sub>
 
 </div>
@@ -39,14 +43,14 @@
 
 ## 💡 Why FlareMo?
 
-Tools like Flomo and Memos proved the immense value of low-friction memo capture and a distraction-free timeline. However, self-hosting a traditional note-taking setup typically means paying for a VPS, configuring Docker and PostgreSQL, scripting automated backups, and dreading disk or hardware failures.
+Low-friction memo capture and a distraction-free timeline have proved their value. Self-hosting a traditional note-taking setup, though, typically means paying for a VPS, configuring Docker and PostgreSQL, scripting automated backups, and dreading disk or hardware failures.
 
 FlareMo answers a simpler question: **Can you get a 24/7 online, resilient, globally accelerated knowledge base with zero server maintenance, using just a free Cloudflare account?**
 
 - **Truly Serverless**: Both code and static assets run on Cloudflare Workers edge nodes near you with millisecond latency.
 - **Enterprise-grade durability out of the box**: Cloudflare D1 handles notes and metadata; Cloudflare R2 stores media attachments with multi-region replication.
 - **AI-Native Second Brain**: Agent Memory hub ships a CLI and a cross-agent skill so AI agents (Claude, Cursor, Codex, ChatGPT, ZCode) can read and update your long-term preferences and memory scopes; MCP endpoints are also available.
-- **Quiet for one, powerful for many**: Default is an encrypted, private single-user sanctuary. Enable team mode, and it instantly transforms into a collaborative workspace with roles and three-tier visibility.
+- **Quiet for one, powerful for many**: Default is an encrypted, private single-user sanctuary. Enable team mode to add a shared team space with roles and three-tier visibility — for sharing notes, not for running projects together.
 - **Minimal, not simplistic**: The interface stays quiet and every control earns its place — nothing decorative shouting for attention, nothing useful missing.
 
 ---
@@ -55,6 +59,8 @@ FlareMo answers a simpler question: **Can you get a 24/7 online, resilient, glob
 
 ### 1. Instant Capture & Inspiring Review
 - **Capture in milliseconds**: Card-style timeline, tags, Markdown/GFM, and previews for image and audio attachments.
+- **Notes and articles**: The composer stays a quick note (tags, up to 9 images, bold, lists, to-dos); "Write full screen" opens the same note in a full-screen canvas. Articles are written from the Articles page.
+- **Comments under the note**: Comment on any note, in your personal space or the team space, Weibo-style. Comments live under the original note and stay out of the timeline, search, stats, tags, and review.
 - **Lightning-fast search**: SQLite FTS5 full-text indexing with query operators (`has:attachment`, `is:pinned`, `before:YYYY-MM-DD`, `after:YYYY-MM-DD`, `in:timeline|archive|trash`).
 - **Semantic "Find" (Vector Search)**: Workers AI embeddings paired with Vectorize derived vector indexes for contextual recall; re-verifies permissions against D1 and seamlessly falls back to FTS5.
 - **Thought activation**: Built-in **Daily Review** (on this day), **Random Walk** (wandering through tag and backlink graphs with postcard summaries), and related note recommendations.
@@ -65,18 +71,19 @@ FlareMo answers a simpler question: **Can you get a 24/7 online, resilient, glob
 - **Human in the loop**: Review, verify, lock, or correct AI-recorded memories at `/memory`.
 - **Open ecosystem**: CLI + Skills are the recommended path; `/memory/mcp` (Streamable HTTP MCP) and `/mcp` endpoints are available for existing MCP clients.
 
-### 3. Projects & Tasks
-- **Group work under projects**: Organize notes and to-dos into projects, with a kanban board (drag between status columns), priorities, manual sort order, and due dates.
+### 3. To-dos & Projects
+- **Schedule a note**: Pick a day and a project for a note; each unchecked to-do in it becomes a task. Checking it off in the note or on the to-do page stays in sync both ways.
+- **One to-do page**: `/projects` shows **Today**, **Next 7 days**, and **All tasks** as day-grouped lists, plus your projects as kanban boards (drag between status columns, priorities, manual order). Every list has a quick-add row.
 - **Personal by design, reversible deletion**: Tasks belong to a single owner; deleting moves them to a recycle bin until restored or automatically purged.
 
-### 4. Task Management & Reminders
-- **Tasks live in Projects**: The `/projects` board (drag between status columns), priorities, manual sort order, and due dates make project pages the single home for scheduling work.
+### 4. Reminders & Time Horizons
+- **Badges where you read**: Scheduled notes show "to-dos n/m · date · project" on the card, and Daily Review opens with today's to-dos.
 - **Time horizons at a glance**: The explorer home view pairs a mini month calendar with overdue/today reminders, so what's due never hides behind the board.
-- **Overdue reminders**: Overdue tasks raise in-app notifications, with optional browser Web Push.
+- **Due and overdue reminders**: A daily job raises "due today" and overdue notifications in the app, with optional browser Web Push. Schedules are day-level; there are no clock-time alarms.
 
-### 5. Team Collaboration & 3-Tier Visibility
+### 5. Team Space & 3-Tier Visibility
+- **Sharing, not collaboration**: The team space is where members publish notes to each other and comment on them. `@username` mentions autocomplete in the team composer and notify the person mentioned; notifications open the original note at its comments.
 - **Role governance**: `owner`, `admin`, and `member` roles. Admins invite members via one-time activation links (members choose their own passwords; admins never handle plaintext credentials).
-- **Team project workbench**: `/team-projects` collects every team project into one view — owner, status, current progress, next step, and follow-up date — and opens a detail page to maintain the summary, log progress and meeting outcomes, and upload reference files. A project is an ordinary team memo recognized by a `kosx-pm` metadata block in its body, so notes that are not projects stay untouched in the timeline.
 - **3-tier visibility**:
   - 🔒 **Private**: Only author can view.
   - 👥 **Team**: Shared read-only with active team members.
@@ -87,7 +94,7 @@ FlareMo answers a simpler question: **Can you get a 24/7 online, resilient, glob
 ### 6. Offline First & PWA Experience
 - **Installable PWA**: Install to macOS, Windows, iOS, or Android home screen with native feel.
 - **Reliable offline sync**: Drafts save locally instantly. Offline submissions and uploads queue up and replay automatically when connectivity is restored.
-- **Live voice capture**: Access `/capture` for real-time streaming speech-to-text (ASR) transcription.
+- **Live voice input**: The composer's microphone button streams speech-to-text (ASR) into the draft as you speak.
 
 ### 7. Secure Better Auth Application Security
 - **Better Auth powered**: HttpOnly, `SameSite=Lax` browser cookie sessions; revocable `memos_pat_` Personal Access Tokens for scripts, CLI, and MCP.
@@ -96,7 +103,7 @@ FlareMo answers a simpler question: **Can you get a 24/7 online, resilient, glob
 ### 8. Memos Compatibility & Seamless Migration
 - **Memos `/api/v1` compatibility**: Provides core Memos API endpoints (camelCase default, legacy snake_case via header) and OpenAPI schema.
 - **Third-party apps ready**: Works directly with mobile clients like Moe Memos.
-- **Bi-directional import & export**: One-click import from Memos / flomo with conflict strategies and full raw export bundles.
+- **Bi-directional import & export**: Full raw export bundles, one-click import with conflict strategies, plus a converter for Memos 0.31 exports ([guide](./docs/en/import-from-memos.md)).
 
 ---
 

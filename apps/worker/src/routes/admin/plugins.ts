@@ -8,6 +8,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import type { HonoBindings } from "../../context";
 import { jsonError } from "../../http";
+import { invalidatePluginSettingsCache } from "../../settings-cache";
 import { ownerContext } from "./context";
 
 const pluginIdSchema = z
@@ -49,7 +50,9 @@ export function registerPluginsRoutes(app: Hono<HonoBindings>) {
   app.put("/plugins", zValidator("json", updatePluginsSchema), async (c) => {
     try {
       const { db } = await ownerContext(c);
-      return c.json(await setPluginSettings(db, c.req.valid("json")));
+      const settings = await setPluginSettings(db, c.req.valid("json"));
+      invalidatePluginSettingsCache(db);
+      return c.json(settings);
     } catch (error) {
       return jsonError(c, error);
     }

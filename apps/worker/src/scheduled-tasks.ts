@@ -1,8 +1,10 @@
+import { thumbnailKeyFor } from "@flaremo/contracts/constants";
 import { createDb, memosNotifications, tasks } from "@flaremo/db";
 import {
   beginFlaremoMemberRemoval,
   claimMemberRemovalJob,
   createDailyReviewNotifications,
+  createDueTodayTaskNotifications,
   createOverdueTaskNotifications,
   deleteExpiredDataTasks,
   dispatchEmbeddingOutbox,
@@ -23,6 +25,7 @@ import {
   listQueuedMemberRemovalJobs,
   MEMOS_SSE_RETENTION_MS,
   markArticleAttachmentsDeleting,
+  nextDayKey,
   type PlanLimits,
   type PushKeys,
   parseUserPlanLimits,
@@ -37,7 +40,7 @@ import {
   type UserPlanLimits,
   updateMemberRemovalJob,
 } from "@flaremo/domain";
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { cleanupFlaremoArtifacts } from "./artifact-cleanup";
 import { createEmbeddingProvider, createVectorIndex } from "./embedding";
 import type { FlareMoEnv } from "./env";
@@ -247,7 +250,13 @@ export async function runScheduledMaintenance(
   for (let batch = 0; batch < MAX_ATTACHMENT_CLEANUP_BATCHES; batch++) {
     const candidates = await listAttachmentCleanupCandidates(db, orphanCutoff);
     if (candidates.length === 0) break;
-    const objectKeys = candidates.map((attachment) => attachment.r2Key);
+    // Originals plus their derived previews; a preview's key is the original
+    // with a fixed suffix, so it is not discoverable by a later sweep.
+    const objectKeys = candidates.flatMap((attachment) =>
+      attachment.payload?.thumbnail === true
+        ? [attachment.r2Key, thumbnailKeyFor(attachment.r2Key)]
+        : [attachment.r2Key],
+    );
     await env.ATTACHMENTS.delete(objectKeys);
     await finalizeAttachmentCleanupForIds(
       db,
@@ -288,8 +297,10 @@ export async function runScheduledMaintenance(
         owner,
         articleId,
       );
-      const objectKeys = articleAttachments.map(
-        (attachment) => attachment.r2Key,
+      const objectKeys = articleAttachments.flatMap((attachment) =>
+        attachment.payload?.thumbnail === true
+          ? [attachment.r2Key, thumbnailKeyFor(attachment.r2Key)]
+          : [attachment.r2Key],
       );
       if (objectKeys.length > 0) {
         await env.ATTACHMENTS.delete(objectKeys);
@@ -349,6 +360,10 @@ export async function runScheduledMaintenance(
   const overdueNotificationCount = await createOverdueTaskNotifications(db, {
     date: reviewDate,
   });
+  // Dated to-dos remind on their day: one row per task due today.
+  const dueTodayNotificationCount = await createDueTodayTaskNotifications(db, {
+    date: reviewDate,
+  });
   // Fire the Web Push reminders alongside the notification rows. Push stays
   // disabled end-to-end without both VAPID keys; failures never affect the
   // notification rows.
@@ -393,6 +408,29 @@ export async function runScheduledMaintenance(
         url: "/projects",
       }).catch(() => undefined);
     }
+    // The day a dated to-do falls due, one aggregate push per user.
+    const dueTodayByUser = await db
+      .select({
+        userId: tasks.userId,
+        count: sql<number>`count(*)`.mapWith(Number),
+      })
+      .from(tasks)
+      .where(
+        and(
+          isNull(tasks.deletedAt),
+          gte(tasks.dueAt, reviewDate),
+          lt(tasks.dueAt, nextDayKey(reviewDate)),
+          inArray(tasks.status, ["todo", "in_progress"]),
+        ),
+      )
+      .groupBy(tasks.userId);
+    for (const row of dueTodayByUser) {
+      await pushNotificationToUser(db, pushKeys, row.userId, {
+        title: "FlareMo 今日待办",
+        body: `今天有 ${row.count} 项待办到期。`,
+        url: "/projects",
+      }).catch(() => undefined);
+    }
   }
   console.log(
     JSON.stringify({
@@ -404,6 +442,7 @@ export async function runScheduledMaintenance(
       expiredTaskCount: expiredIds.length,
       reviewNotificationCount,
       overdueNotificationCount,
+      dueTodayNotificationCount,
       scheduledTime,
     }),
   );

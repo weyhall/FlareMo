@@ -10,6 +10,9 @@ import { taskActivity, tasks } from "@flaremo/db";
 import { and, asc, eq, gt, gte, inArray, isNull, lt, or } from "drizzle-orm";
 import { NotFoundError, ValidationError } from "./errors";
 import { createResourceId, parseResourceName } from "./ids";
+import { setMemoTaskLineState } from "./memo-task-sync";
+import { getMemoById } from "./memos-read";
+import { updateMemo } from "./memos-write";
 import { requireProject } from "./projects";
 
 // D1 caps bound parameters per statement at 100. Leave room for the cutoff
@@ -32,6 +35,8 @@ export type ListTasksOptions = {
   dueFrom?: string | null;
   /** Inclusive upper bound on `due_at` (YYYY-MM-DD). */
   dueTo?: string | null;
+  /** Only tasks scheduled from this memo (`memos/<id>` or a bare id). */
+  sourceMemoId?: string | null;
   /** Recycle bin: include soft-deleted tasks. */
   includeDeleted?: boolean;
   pageSize?: number;
@@ -224,6 +229,11 @@ export async function listTasks(
   if (input.priority) filters.push(eq(tasks.priority, input.priority));
   if (input.dueFrom) filters.push(gte(tasks.dueAt, input.dueFrom));
   if (input.dueTo) filters.push(lt(tasks.dueAt, nextDayKey(input.dueTo)));
+  if (input.sourceMemoId) {
+    filters.push(
+      eq(tasks.sourceMemoId, normalizeSourceMemoId(input.sourceMemoId) ?? ""),
+    );
+  }
   const cursor = input.pageToken
     ? decodeTaskPageToken(input.pageToken)
     : undefined;
@@ -389,7 +399,36 @@ export async function updateTask(
     : "updated";
   await appendActivity(db, user, actor, id, action, changes);
 
+  const wasDone = existing.status === "done";
+  const isDone = next.status === "done";
+  if (statusChanged && wasDone !== isDone && next.sourceMemoId) {
+    await syncSourceMemoLine(db, user, next.sourceMemoId, next.title, isDone);
+  }
+
   return taskToDto(await requireTask(db, user, id));
+}
+
+/**
+ * Completing (or reopening) a task ticks the matching to-do line in the memo
+ * it came from. Best effort: a memo that is gone, no longer the caller's to
+ * edit, or no longer carries the line simply stays as it is.
+ */
+async function syncSourceMemoLine(
+  db: FlareMoDb,
+  user: UserRow,
+  memoId: string,
+  title: string,
+  checked: boolean,
+) {
+  try {
+    const memo = await getMemoById(db, user, memoId);
+    if (memo.userId !== user.id || memo.status === "trashed") return;
+    const content = setMemoTaskLineState(memo.content, title, checked);
+    if (content === null) return;
+    await updateMemo(db, user, memoId, { content });
+  } catch {
+    // The task update stands on its own.
+  }
 }
 
 // ---------------------------------------------------------------------------

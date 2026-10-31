@@ -139,6 +139,18 @@ export const dailyReviewQuerySchema = z.object({
   tzOffset: z.coerce.number().int().min(-840).max(840).default(0),
 });
 
+export const reviewMarkSchema = z.object({
+  memoId: z.string().trim().min(1).max(200),
+  /** The viewer-local day the read happened, YYYY-MM-DD. */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  action: z.enum(["reviewed", "mute", "unmute"]),
+});
+
+export const reviewSettingsUpdateSchema = z.object({
+  excludedTags: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  restoreMuted: z.boolean().optional(),
+});
+
 export const randomMemoQuerySchema = z.object({
   /** Comma-separated memo resource names already walked through. */
   exclude: z.string().trim().max(64_000).optional(),
@@ -173,6 +185,8 @@ export const attachmentDtoSchema = z.object({
   update_time: z.string(),
   download_url: z.string(),
   preview_url: z.string(),
+  /** Card-sized WebP preview; absent when none was generated at upload. */
+  thumbnail_url: z.string().optional(),
 });
 
 export const memoDtoSchema = z.object({
@@ -199,6 +213,8 @@ export const memoDtoSchema = z.object({
   // even though they cannot edit them.
   can_govern: z.boolean().optional(),
   attachments: z.array(attachmentDtoSchema).optional(),
+  // Comments under this memo the viewer can read (app timeline only).
+  comment_count: z.number().int().nonnegative().optional(),
 });
 
 export const listMemosResponseSchema = z.object({
@@ -586,10 +602,14 @@ export const appNotificationDtoSchema = z.object({
     "memo_mention",
     "daily_review",
     "task_overdue",
+    "task_due",
   ]),
   status: z.enum(["unread", "archived"]),
   // Task-overdue rows have no memo anchor; memo_snippet carries the title.
   memo: z.string().nullable(),
+  // Parent memo for comment notifications (the thread to open).
+  related_memo: z.string().nullable().optional(),
+  sender_name: z.string().optional(),
   memo_snippet: z.string(),
   create_time: z.string(),
 });
@@ -626,6 +646,23 @@ export type WalkNextQuery = z.infer<typeof walkNextQuerySchema>;
 export type RelatedMemosQuery = z.infer<typeof relatedMemosQuerySchema>;
 export type ReviewWalkVia = z.infer<typeof reviewWalkViaSchema>;
 export type DailyReviewResponse = { memos: MemoDto[] };
+export type ReviewMarkInput = z.infer<typeof reviewMarkSchema>;
+export type ReviewSettingsUpdate = z.infer<typeof reviewSettingsUpdateSchema>;
+/** Why a note is in today's review: a past year's same day, or its age. */
+export type TodayReviewReason =
+  | { type: "years"; years: number }
+  | { type: "ladder"; days: number };
+export type TodayReviewItem = {
+  memo: MemoDto;
+  reason: TodayReviewReason;
+  /** Already read in today's review (here or on another device). */
+  reviewed: boolean;
+};
+export type TodayReviewResponse = { date: string; items: TodayReviewItem[] };
+export type ReviewSettingsResponse = {
+  excluded_tags: string[];
+  muted_count: number;
+};
 export type RandomMemoResponse = { memo: MemoDto | null };
 export type WalkNextResponse = {
   memo: MemoDto | null;
@@ -676,3 +713,11 @@ export type TagHierarchyResponse = z.infer<typeof tagHierarchyResponseSchema>;
 export type RenameTagInput = z.infer<typeof renameTagRequestSchema>;
 export type RenameTagResponse = z.infer<typeof renameTagResponseSchema>;
 export type DeleteTagResponse = z.infer<typeof deleteTagResponseSchema>;
+
+// A comment is plain prose under its parent memo; it inherits the parent's
+// visibility, so the request carries only the text.
+export const createMemoCommentSchema = z.object({
+  content: z.string().trim().min(1).max(20_000),
+  client_id: z.string().trim().min(1).max(128).optional(),
+});
+export type CreateMemoCommentRequest = z.infer<typeof createMemoCommentSchema>;

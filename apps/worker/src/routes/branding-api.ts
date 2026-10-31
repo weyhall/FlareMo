@@ -1,11 +1,8 @@
-import {
-  type BrandingMark,
-  type BrandingMarkVariant,
-  getBranding,
-} from "@flaremo/domain";
+import type { BrandingMark, BrandingMarkVariant } from "@flaremo/domain";
 import { Hono } from "hono";
 import { getFlareMoDb, type HonoBindings } from "../context";
 import { jsonError } from "../http";
+import { getBrandingCached } from "../settings-cache";
 
 /**
  * Public white-label branding. Anonymous visitors (login page, shared memos)
@@ -19,7 +16,7 @@ const MARK_CACHE_CONTROL = "public, max-age=300";
 brandingApi.get("/", async (c) => {
   try {
     const db = getFlareMoDb(c.env);
-    const branding = await getBranding(db);
+    const branding = await getBrandingCached(db);
     const markUrl = (
       variant: BrandingMarkVariant,
       mark: BrandingMark | null,
@@ -47,7 +44,7 @@ for (const variant of ["light", "dark"] as const) {
   brandingApi.get(`/marks/${variant}`, async (c) => {
     try {
       const db = getFlareMoDb(c.env);
-      const branding = await getBranding(db);
+      const branding = await getBrandingCached(db);
       const mark = branding.marks[variant];
       if (!mark) {
         return c.json({ error: { message: "Not found" } }, 404);
@@ -77,7 +74,7 @@ for (const variant of ["light", "dark"] as const) {
 brandingApi.get("/favicon", async (c) => {
   try {
     const db = getFlareMoDb(c.env);
-    const branding = await getBranding(db);
+    const branding = await getBrandingCached(db);
     const favicon = branding.favicon;
     if (!favicon) {
       return c.json({ error: { message: "Not found" } }, 404);

@@ -1,7 +1,7 @@
 import { resolveOptionValues } from "@flaremo/plugins";
 import { useQuery } from "@tanstack/react-query";
 import { toPng } from "html-to-image";
-import { DownloadIcon, Loader2Icon } from "lucide-react";
+import { DownloadIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Memo } from "@/api";
@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 import { type TranslationKey, useI18n } from "@/i18n";
 import { formatMemoTime } from "@/lib/memo";
 import {
@@ -340,13 +341,17 @@ export function ShareImageDialog({
         )}
         <fieldset
           aria-label={t("share.templateLabel")}
-          className="flex flex-wrap justify-center gap-1.5 border-0 p-0"
+          // One scrollable row: nine templates wrapped into 7 + 2 and left
+          // an orphan line. Bleeds to the dialog edge so the scroll reads as
+          // a strip, not a clipped box. min-w-0 overrides the fieldset default
+          // (min-inline-size: min-content) that otherwise widens the dialog.
+          className="no-scrollbar -mx-5 flex min-w-0 gap-1 overflow-x-auto border-0 px-5 py-0.5 [mask-image:linear-gradient(to_right,transparent,black_1.25rem,black_calc(100%-1.25rem),transparent)]"
         >
           {cards.map((item) => (
             <button
               aria-pressed={card?.id === item.id}
               className={cn(
-                "rounded-md px-3 py-1 text-xs motion-safe:transition-colors",
+                "shrink-0 rounded-full px-3 py-1 text-xs whitespace-nowrap motion-safe:transition-colors",
                 card?.id === item.id
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -360,6 +365,15 @@ export function ShareImageDialog({
           ))}
         </fieldset>
         <DialogFooter>
+          {/* The dialog has no corner close; this is the visible way out. */}
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => onOpenChange(false)}
+            type="button"
+            variant="ghost"
+          >
+            {t("common.cancel")}
+          </Button>
           <Button
             className="w-full sm:w-auto"
             disabled={
@@ -374,10 +388,7 @@ export function ShareImageDialog({
             variant="brand"
           >
             {isExporting ? (
-              <Loader2Icon
-                className="motion-safe:animate-spin"
-                data-icon="inline-start"
-              />
+              <Spinner data-icon="inline-start" />
             ) : (
               <DownloadIcon data-icon="inline-start" />
             )}

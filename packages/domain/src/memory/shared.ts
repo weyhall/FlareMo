@@ -312,20 +312,48 @@ export async function appendMemoryEvent(
   db: FlareMoDb,
   userId: string,
   memoryId: string,
-  eventType:
-    | "created"
-    | "confirmed"
-    | "locked"
-    | "unlocked"
-    | "challenged"
-    | "superseded"
-    | "archived"
-    | "restored",
+  eventType: MemoryEventType,
   actorType: "user" | "agent",
   actorName?: string | null,
   metadata?: Record<string, unknown>,
 ) {
-  await db.insert(memoryEvents).values({
+  await memoryEventStatement(
+    db,
+    userId,
+    memoryId,
+    eventType,
+    actorType,
+    actorName,
+    metadata,
+  );
+}
+
+export type MemoryEventType =
+  | "created"
+  | "confirmed"
+  | "locked"
+  | "unlocked"
+  | "challenged"
+  | "superseded"
+  | "archived"
+  | "restored";
+
+/**
+ * Prepared sibling of {@link appendMemoryEvent} for sweeps that write many
+ * events at once: the caller collects statements and flushes them in one
+ * `db.batch` instead of paying a round trip per row.
+ */
+export function memoryEventStatement(
+  db: FlareMoDb,
+  userId: string,
+  memoryId: string,
+  eventType: MemoryEventType,
+  actorType: "user" | "agent",
+  actorName?: string | null,
+  metadata?: Record<string, unknown>,
+  createdAt?: string,
+) {
+  return db.insert(memoryEvents).values({
     id: createResourceId("memories"),
     userId,
     memoryId,
@@ -333,7 +361,7 @@ export async function appendMemoryEvent(
     actorType,
     actorName: actorName ?? null,
     metadata: metadata ?? {},
-    createdAt: new Date().toISOString(),
+    createdAt: createdAt ?? new Date().toISOString(),
   });
 }
 

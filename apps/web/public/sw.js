@@ -15,6 +15,19 @@ const CACHE_NAMES = new Set([
   OFFLINE_CACHE,
 ]);
 
+/**
+ * How many immutable asset entries to keep.
+ *
+ * Every deploy emits a new set of content-addressed filenames under the same
+ * cache name, and the old ones were never removed: a user who ran ten versions
+ * still had ten full builds on disk. There is no build manifest to diff
+ * against (this file is served verbatim), so the cache is trimmed by insertion
+ * order — `Cache` iterates in insertion order, which is what makes the oldest
+ * entries the ones to drop. Keeping three builds' worth covers a rollback and
+ * any lazy chunk still in flight.
+ */
+const MAX_STATIC_ASSET_ENTRIES = 600;
+
 // Markers are emitted by the real documents (index.html, offline.html). Their
 // absence proves the response is an access wall or an error page.
 const APP_SHELL_MARKER = "flaremo-app-shell";
@@ -50,6 +63,7 @@ self.addEventListener("activate", (event) => {
               .map((name) => caches.delete(name)),
           ),
         )
+        .then(() => pruneStaticAssetCache())
         .then(() => undefined),
       self.clients.claim(),
     ]),
@@ -107,7 +121,6 @@ function isPrivateAppNavigation(url) {
   const scopePath = scopeUrl.pathname;
   const privateRoutes = [
     `${scopePath}account`,
-    `${scopePath}capture`,
     `${scopePath}forgot-password`,
     `${scopePath}login`,
     `${scopePath}memory`,
@@ -137,7 +150,11 @@ async function cacheFirstStaticAsset(request) {
 
   const response = await fetch(request);
   if (isCacheableStaticResponse(response)) {
-    await cache.put(request, response.clone()).catch(() => undefined);
+    // Keep the content-type gate ahead of the write: a 200 HTML error or
+    // access wall must never be stored as a piece of the app.
+    if (isAssetContentType(response)) {
+      await cache.put(request, response.clone()).catch(() => undefined);
+    }
   }
   return response;
 }
@@ -172,12 +189,49 @@ async function networkFirstNavigation(request) {
   }
 }
 
+/**
+ * Trims the immutable-asset cache to the newest `MAX_STATIC_ASSET_ENTRIES`.
+ * `Cache.keys()` returns entries in insertion order, so the surplus is always
+ * at the front. Runs on activate because that is the only point where the
+ * worker knows it is executing a newer build than the entries on disk.
+ */
+async function pruneStaticAssetCache() {
+  try {
+    const cache = await caches.open(STATIC_ASSET_CACHE);
+    const requests = await cache.keys();
+    const surplus = requests.length - MAX_STATIC_ASSET_ENTRIES;
+    if (surplus <= 0) return;
+    await Promise.all(
+      requests.slice(0, surplus).map((request) => cache.delete(request)),
+    );
+  } catch {
+    // Eviction is housekeeping; never let it fail activation.
+  }
+}
+
 function isCacheableStaticResponse(response) {
   return (
     response.ok &&
     !response.redirected &&
     response.type === "basic" &&
     !hasNoStoreDirective(response)
+  );
+}
+
+/**
+ * Only the asset kinds this worker is allowed to keep. `isCacheableStaticResponse`
+ * checks status and cache headers but not the body, so a 200 HTML page served
+ * from `/assets/…` (an access wall, a misrouted SPA fallback) would otherwise
+ * be cached forever as a JS or font file.
+ */
+function isAssetContentType(response) {
+  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  return (
+    contentType.includes("javascript") ||
+    contentType.includes("css") ||
+    contentType.includes("font") ||
+    contentType.includes("image/") ||
+    contentType.includes("wasm")
   );
 }
 

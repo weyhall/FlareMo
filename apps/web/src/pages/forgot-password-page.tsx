@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { getRegistrationStatus, requestPasswordReset } from "@/api";
 import { AuthPageFrame } from "@/components/auth-page-frame";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n";
@@ -66,12 +67,14 @@ export function ForgotPasswordPage() {
           banner must stay hidden, otherwise self-hosted instances flash it
           and yank the form upward when email turns out to be configured. */}
       {statusQuery.isSuccess && !emailProviderEnabled && (
-        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-          {t("auth.forgotPasswordSelfHostHint")}{" "}
-          <Link className="underline underline-offset-4" to="/recover">
-            {t("auth.forgotPasswordRecoverLink")}
-          </Link>
-        </p>
+        <Alert className="mb-4" role="status" variant="warning">
+          <p>
+            {t("auth.forgotPasswordSelfHostHint")}{" "}
+            <Link className="underline underline-offset-4" to="/recover">
+              {t("auth.forgotPasswordRecoverLink")}
+            </Link>
+          </p>
+        </Alert>
       )}
       <form
         className="flex flex-col gap-4"
@@ -96,11 +99,7 @@ export function ForgotPasswordPage() {
             onChange={(event) => setEmail(event.target.value)}
           />
         </label>
-        {formError && (
-          <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            {formError}
-          </p>
-        )}
+        {formError && <Alert variant="destructive">{formError}</Alert>}
         <Button
           disabled={isSubmitting || !emailProviderEnabled}
           type="submit"

@@ -99,7 +99,12 @@ export function mountLazySsrPages(app: Hono<HonoBindings>): void {
     registerArticlePage(inner);
     return inner;
   };
-  const pages = loadPages();
+  // Loaded on the first page request, not when the app is assembled. Eager
+  // invocation still parsed marked/sitemap/feed into every isolate that only
+  // ever served the API, which is exactly the startup cost the lazy split was
+  // meant to avoid.
+  let pages: Promise<AnyHono> | undefined;
+  const getPages = () => (pages ??= loadPages());
   for (const path of [
     "/sitemap.xml",
     "/sitemap-articles.xml",
@@ -110,7 +115,7 @@ export function mountLazySsrPages(app: Hono<HonoBindings>): void {
     // Forward the untouched raw request: the inner app registers the same
     // absolute paths, so no re-basing applies here.
     app.all(path, (c) => {
-      return pages.then((p) => {
+      return getPages().then((p) => {
         let ctx: unknown;
         try {
           ctx = c.executionCtx;

@@ -1,10 +1,12 @@
 import type { MemoSpace } from "@flaremo/contracts";
 import type { FlareMoDb, MemoPayload, MemoRow, UserRow } from "@flaremo/db";
 import { memoRevisions, memos, memoTags } from "@flaremo/db";
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { chunkForD1, d1IdsPerStatement } from "./d1-limits";
 import { insertEmbeddingTask } from "./embedding-outbox";
 import { NotFoundError, ValidationError } from "./errors";
 import { createResourceId } from "./ids";
+import { notComment } from "./memo-comment-filter";
 import { insertMemosSseEvent } from "./memos-sse";
 import { insertMemosWebhookEvent } from "./memos-webhooks";
 import { scopedReadScope, type TeamViewer } from "./team-permissions";
@@ -38,6 +40,14 @@ export function normalizeTag(value: string): string | undefined {
 }
 
 /**
+ * Maximum tags accepted for a single memo. The write path inserts one row per
+ * tag with four bound columns, and D1 rejects any statement past 100
+ * parameters — so this ceiling is what keeps a single memo's tag insert
+ * inside one statement. It also bounds what a client can make us write.
+ */
+export const MAX_MEMO_TAGS = 20;
+
+/**
  * Normalize an array of raw tag values into a sorted, de-duplicated list of
  * canonical tag paths. Values that fail normalization are dropped.
  */
@@ -46,6 +56,7 @@ export function normalizeMemoTags(values: string[]) {
   for (const value of values) {
     const tag = normalizeTag(value);
     if (tag) tags.add(tag);
+    if (tags.size >= MAX_MEMO_TAGS) break;
   }
   return [...tags].sort((a, b) => a.localeCompare(b));
 }
@@ -54,16 +65,22 @@ export function normalizeMemoTags(values: string[]) {
  * Extract `#tag` tokens from memo content. Supports hierarchical tags using
  * `/` as the path separator (`#工作/项目A`). Stops at whitespace or
  * punctuation so `#tag，` still yields `tag`.
+ *
+ * Code is not prose: fenced code blocks and inline code spans are skipped, so
+ * a `#comment` or `#include` inside a snippet never becomes a tag (issue #152).
  */
 export function extractTags(content: string) {
   const tags = new Set<string>();
-  for (const match of content.matchAll(
-    /(^|[^\p{L}\p{N}_\-/])#([\p{L}\p{N}_\-/]+)/gu,
-  )) {
-    const raw = match[2];
-    if (!raw) continue;
-    const tag = normalizeTag(raw);
-    if (tag) tags.add(tag);
+  for (const { text, literal } of splitMarkdownLiteralSegments(content)) {
+    if (literal) continue;
+    for (const match of text.matchAll(
+      /(^|[^\p{L}\p{N}_\-/])#([\p{L}\p{N}_\-/]+)/gu,
+    )) {
+      const raw = match[2];
+      if (!raw) continue;
+      const tag = normalizeTag(raw);
+      if (tag) tags.add(tag);
+    }
   }
   return [...tags];
 }
@@ -102,28 +119,64 @@ export async function listTagHierarchy(
   user: TeamViewer,
   options: { space?: MemoSpace } = {},
 ): Promise<TagHierarchyNode[]> {
-  const rows = await db
+  const scope = options.space
+    ? and(
+        scopedReadScope(user, options.space),
+        inArray(memos.status, ["normal", "archived"]),
+        notComment(),
+      )
+    : and(
+        eq(memoTags.userId, user.id),
+        inArray(memos.status, ["normal", "archived"]),
+        // A tag inside a comment does not file the comment as a note.
+        notComment(),
+      );
+
+  // Leaf counts come from one aggregation: D1 reads the covering index
+  // (`user_id, tag, memo_id`) and returns one row per distinct tag instead of
+  // one row per (memo, tag) pair — a 50k-memo corpus used to ship ~150k rows
+  // to the Worker on every sidebar refresh.
+  const grouped = await db
     .select({
-      memoId: memoTags.memoId,
-      name: memoTags.tag,
+      tag: memoTags.tag,
+      count: sql<number>`count(distinct ${memoTags.memoId})`.mapWith(Number),
     })
     .from(memoTags)
     .innerJoin(memos, eq(memoTags.memoId, memos.id))
-    .where(
-      options.space
-        ? and(
-            scopedReadScope(user, options.space),
-            inArray(memos.status, ["normal", "archived"]),
-          )
-        : and(
-            eq(memoTags.userId, user.id),
-            inArray(memos.status, ["normal", "archived"]),
-          ),
-    )
-    .orderBy(asc(memoTags.tag));
-  return buildTagTree(
-    rows.map((row) => ({ memoId: row.memoId, name: row.name })),
-  );
+    .where(scope)
+    .groupBy(memoTags.tag);
+
+  // Only hierarchy nodes need per-memo identity: a memo carrying both `工作`
+  // and `工作/项目A` must count once for `工作`. Any tag containing a `/` and
+  // all of its ancestors are the only nodes whose count is not simply their
+  // own aggregated count, so the second read is scoped to those.
+  const hierarchical = new Set<string>();
+  for (const row of grouped) {
+    if (!row.tag.includes("/")) continue;
+    let path = "";
+    for (const segment of row.tag.split("/")) {
+      path = path ? `${path}/${segment}` : segment;
+      hierarchical.add(path);
+    }
+  }
+
+  const memoEdges: TagCount[] = [];
+  if (hierarchical.size > 0) {
+    const tags = [...hierarchical];
+    // `scopedReadScope` adds several bindings of its own in team space, so the
+    // default reserve is the safe size here.
+    for (const tagChunk of chunkForD1(tags, d1IdsPerStatement())) {
+      memoEdges.push(
+        ...(await db
+          .select({ memoId: memoTags.memoId, name: memoTags.tag })
+          .from(memoTags)
+          .innerJoin(memos, eq(memoTags.memoId, memos.id))
+          .where(and(scope, inArray(memoTags.tag, tagChunk)))),
+      );
+    }
+  }
+
+  return buildTagTree(grouped, memoEdges, hierarchical);
 }
 
 type TagCount = { memoId: string; name: string };
@@ -134,8 +187,16 @@ type TagCount = { memoId: string; name: string };
  * that path, so `工作` reports the number of distinct memos tagged `工作` or
  * any descendant (`工作/项目A`, `工作/项目A/子项`, ...) without double counting
  * a memo that carries both `工作` and `工作/项目A`.
+ *
+ * `aggregated` carries one exact distinct-memo count per leaf tag (from SQL);
+ * `memoEdges` carries per-memo memberships for hierarchy nodes only, which is
+ * what the ancestor de-duplication needs.
  */
-function buildTagTree(tags: TagCount[]): TagHierarchyNode[] {
+function buildTagTree(
+  aggregated: ReadonlyArray<{ tag: string; count: number }>,
+  memoEdges: readonly TagCount[],
+  hierarchical: ReadonlySet<string>,
+): TagHierarchyNode[] {
   const root: MutableTagNode = {
     name: "",
     count: 0,
@@ -144,8 +205,7 @@ function buildTagTree(tags: TagCount[]): TagHierarchyNode[] {
     memos: new Set(),
   };
 
-  for (const { memoId, name } of tags) {
-    const segments = name.split("/");
+  const ensureNode = (segments: readonly string[]) => {
     let cursor = root;
     let path = "";
     for (const segment of segments) {
@@ -162,6 +222,23 @@ function buildTagTree(tags: TagCount[]): TagHierarchyNode[] {
         cursor.map.set(segment, child);
         cursor.children.push(child);
       }
+      cursor = child;
+    }
+    return cursor;
+  };
+
+  for (const row of aggregated) {
+    const node = ensureNode(row.tag.split("/"));
+    if (!hierarchical.has(row.tag)) node.count = row.count;
+  }
+
+  for (const { memoId, name } of memoEdges) {
+    let cursor = root;
+    let path = "";
+    for (const segment of name.split("/")) {
+      path = path ? `${path}/${segment}` : segment;
+      const child = cursor.map.get(segment);
+      if (!child) continue;
       child.memos.add(memoId);
       cursor = child;
     }
@@ -170,7 +247,7 @@ function buildTagTree(tags: TagCount[]): TagHierarchyNode[] {
   // Convert memo sets to counts after the tree is fully populated so each
   // memo is counted once per node across all of its tag paths and ancestors.
   const toCounted = (node: MutableTagNode): void => {
-    node.count = node.memos.size;
+    if (hierarchical.has(node.name)) node.count = node.memos.size;
     node.children.forEach(toCounted);
   };
   toCounted(root);
@@ -233,11 +310,18 @@ export async function renameTag(
   }
 
   const memoIds = [...new Set(rows.map((row) => row.memoId))];
-  const memosToUpdate = await db
-    .select()
-    .from(memos)
-    .where(inArray(memos.id, memoIds))
-    .all();
+  // A popular tag can cover thousands of memos, and this lookup binds one
+  // parameter per id — chunk it or the rename fails before touching anything.
+  const memosToUpdate: MemoRow[] = [];
+  for (const idChunk of chunkForD1(memoIds, d1IdsPerStatement())) {
+    memosToUpdate.push(
+      ...(await db
+        .select()
+        .from(memos)
+        .where(inArray(memos.id, idChunk))
+        .all()),
+    );
+  }
 
   const now = new Date().toISOString();
   for (
@@ -336,11 +420,16 @@ export async function deleteTag(
   }
 
   const memoIds = rows.map((row) => row.memoId);
-  const memosToUpdate = await db
-    .select()
-    .from(memos)
-    .where(inArray(memos.id, memoIds))
-    .all();
+  const memosToUpdate: MemoRow[] = [];
+  for (const idChunk of chunkForD1(memoIds, d1IdsPerStatement())) {
+    memosToUpdate.push(
+      ...(await db
+        .select()
+        .from(memos)
+        .where(inArray(memos.id, idChunk))
+        .all()),
+    );
+  }
 
   const now = new Date().toISOString();
   for (
@@ -494,6 +583,11 @@ export function removeTagFromContent(content: string, tag: string) {
 /**
  * Split content into segments, marking fenced code blocks, inline code spans,
  * and URLs as literal (untouched). Returns the pieces in order.
+ *
+ * Fence bookkeeping: prose before the opening fence stays ordinary so tags
+ * sitting right before a code block remain rewritable; the opening fence line,
+ * the code body, and the closing fence are all literal so samples are never
+ * rewritten or mined for tags. An unclosed fence runs literal to the end.
  */
 function splitMarkdownLiteralSegments(
   content: string,
@@ -504,31 +598,35 @@ function splitMarkdownLiteralSegments(
   };
   const lines = content.split(/(?<=\n)/);
   let inFence = false;
-  let fenceMarker = "";
+  let fenceChar = "";
+  let fenceLength = 0;
+  let code = "";
   let plain = "";
   for (const line of lines) {
-    const fenceMatch = inFence
-      ? line.match(/^\s*(~{3,}|`{3,})\s*$/)
-      : line.match(/^\s*(~{3,}|`{3,})/);
-    if (inFence && fenceMatch) {
-      // Closing fence of the same character run.
-      if (fenceMatch[1]?.[0] === fenceMarker[0]) {
-        plain += line;
-        pieces.push({ text: plain, literal: false });
-        plain = "";
+    if (inFence) {
+      code += line;
+      // Closing fence: same character, at least as long, nothing after it.
+      const marker = line.trimEnd().match(/^[ \t]*(~{3,}|`{3,})[ \t]*$/)?.[1];
+      if (marker && marker[0] === fenceChar && marker.length >= fenceLength) {
+        // The whole block — body, closing fence included — is literal.
+        push(code, true);
+        code = "";
         inFence = false;
-        fenceMarker = "";
-        continue;
+        fenceChar = "";
+        fenceLength = 0;
       }
-      plain += line;
       continue;
     }
-    if (!inFence && fenceMatch) {
-      plain += line;
-      pieces.push({ text: plain, literal: true });
+    const opening = line.match(/^[ \t]*(~{3,}|`{3,})/)?.[1];
+    if (opening) {
+      // Flush prose collected before the fence as ordinary text, then mark
+      // only the fence line itself (and everything after it) literal.
+      push(plain, false);
       plain = "";
+      push(line, true);
       inFence = true;
-      fenceMarker = fenceMatch[1] ?? "";
+      fenceChar = opening[0] ?? "";
+      fenceLength = opening.length;
       continue;
     }
     // Split inline code spans and URLs out of ordinary lines.
@@ -541,7 +639,11 @@ function splitMarkdownLiteralSegments(
         while (line[index + run] === "`") run += 1;
         const close = line.indexOf("`".repeat(run), index + run);
         if (close !== -1) {
+          // Flush the prose before the span first: pieces are concatenated in
+          // order, so a buffered `plain` must not overtake this literal.
           plain += line.slice(cursor, index);
+          push(plain, false);
+          plain = "";
           pieces.push({
             text: line.slice(index, close + run),
             literal: true,
@@ -560,6 +662,8 @@ function splitMarkdownLiteralSegments(
         let end = index;
         while (end < line.length && !/\s/.test(line[end] as string)) end += 1;
         plain += line.slice(cursor, index);
+        push(plain, false);
+        plain = "";
         pieces.push({ text: line.slice(index, end), literal: true });
         cursor = end;
         index = end;
@@ -569,7 +673,12 @@ function splitMarkdownLiteralSegments(
     }
     plain += line.slice(cursor);
   }
-  push(plain, false);
+  if (inFence) {
+    // An unclosed fence swallows everything up to the end of the content.
+    push(code, true);
+  } else {
+    push(plain, false);
+  }
   return pieces;
 }
 

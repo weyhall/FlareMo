@@ -1,4 +1,4 @@
-import { CAPTURE_BATCH_MAX_BYTES } from "@flaremo/contracts";
+import { CAPTURE_BATCH_MAX_BYTES } from "@flaremo/contracts/constants";
 import { incrementUsageCounter } from "@flaremo/domain";
 import { Hono } from "hono";
 import { z } from "zod";

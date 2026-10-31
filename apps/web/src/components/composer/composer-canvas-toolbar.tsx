@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n";
+import { todayKey } from "@/lib/calendar-date";
 
 /** Format flags mirrored from the editor's selection on every transaction. */
 export type CanvasActiveFormats = {
@@ -329,7 +330,7 @@ export function ComposerCanvasToolbar({
         variant="ghost"
         onClick={() =>
           withEditor((editor) => {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = todayKey();
             editor.chain().focus().insertContent(`${today} `).run();
           })
         }

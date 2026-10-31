@@ -16,6 +16,7 @@ import {
   tasks,
 } from "@flaremo/db";
 import { asc, eq, inArray } from "drizzle-orm";
+import { chunkForD1, d1IdsPerStatement } from "../d1-limits";
 
 /**
  * The export half of import-export.ts, moved verbatim: dumps every
@@ -69,10 +70,12 @@ export async function exportData(
 
   const memoIds = new Set(memoRows.map((memo) => memo.id));
   const relationRows: Array<typeof memoRelations.$inferSelect> = [];
-  const memoIdList = Array.from(memoIds);
-  for (let offset = 0; offset < memoIdList.length; offset += 500) {
-    const memoIdChunk = memoIdList.slice(offset, offset + 500);
-    if (memoIdChunk.length === 0) continue;
+  // One binding per id: D1 rejects the whole statement past 100, and the old
+  // 500-row pages failed outright on any account with more than 100 memos.
+  for (const memoIdChunk of chunkForD1(
+    Array.from(memoIds),
+    d1IdsPerStatement(),
+  )) {
     relationRows.push(
       ...(await db
         .select()

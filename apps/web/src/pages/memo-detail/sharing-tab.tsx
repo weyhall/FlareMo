@@ -1,9 +1,4 @@
-import {
-  ClipboardIcon,
-  Link2Icon,
-  Loader2Icon,
-  UnlinkIcon,
-} from "lucide-react";
+import { ClipboardIcon, Link2Icon, UnlinkIcon } from "lucide-react";
 import type { MemoContext } from "@/api";
 import {
   AlertDialog,
@@ -17,6 +12,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { TabsContent } from "@/components/ui/tabs";
 import { useClipboard } from "@/hooks/use-clipboard";
 import { useI18n } from "@/i18n";
@@ -42,9 +38,14 @@ export function SharingTab({
   return (
     <TabsContent className="flex flex-col gap-3 pt-4" value="sharing">
       <div>
-        <Button disabled={sharePending} size="sm" onClick={onCreateShare}>
+        <Button
+          disabled={sharePending}
+          size="sm"
+          variant={context.shares.length > 0 ? "outline" : "default"}
+          onClick={onCreateShare}
+        >
           {sharePending ? (
-            <Loader2Icon className="animate-spin" data-icon="inline-start" />
+            <Spinner data-icon="inline-start" />
           ) : (
             <Link2Icon data-icon="inline-start" />
           )}
@@ -52,17 +53,21 @@ export function SharingTab({
         </Button>
       </div>
       {context.shares.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t("detail.noShares")}</p>
+        <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+          {t("detail.noShares")}
+        </p>
       )}
       {context.shares.map((share) => {
         const url = `${globalThis.location.origin}/share/${share.token}`;
         return (
           <div
-            className="flex items-center gap-2 rounded-lg border p-3"
+            className="flex items-center gap-1 rounded-lg border py-1.5 ps-3 pe-1.5"
             key={share.name}
           >
             <a
-              className="min-w-0 flex-1 truncate font-mono text-xs hover:text-primary"
+              className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+              rel="noopener"
+              target="_blank"
               href={url}
             >
               {url}

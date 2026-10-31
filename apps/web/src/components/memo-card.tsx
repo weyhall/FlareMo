@@ -1,10 +1,22 @@
 import type { Editor } from "@tiptap/react";
-import { memo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  memo,
+  type SetStateAction,
+  useCallback,
+  useRef,
+  useState,
+} from "react";
 import type { Attachment, Memo, MemoVisibility, Share } from "@/api";
-import { MemoCardBody } from "@/components/memo-card/memo-card-body";
+import {
+  canOpenMemoThread,
+  MemoCardBody,
+  MemoCommentButton,
+} from "@/components/memo-card/memo-card-body";
 import { MemoCardEditor } from "@/components/memo-card/memo-card-editor";
 import { MemoCardHeader } from "@/components/memo-card/memo-card-header";
 import { useMemoCardActions } from "@/components/memo-card/use-memo-card-actions";
+import { MemoComments } from "@/components/memo-comments";
 import { cn } from "@/lib/utils";
 
 type MemoCardProps = {
@@ -38,7 +50,22 @@ type MemoCardProps = {
   onRequestDelete?: (memo: Memo) => void;
   onRequestShareImage?: (memo: Memo) => void;
   onRequestVisibility?: (memo: Memo) => void;
+  /**
+   * Reports whether this card holds unsaved editor state. The virtualized
+   * timeline uses it to keep such a card mounted: unmounting mid-edit would
+   * discard the draft the user is still typing.
+   */
+  onEditingChange?: (memoName: string, editing: boolean) => void;
+  /** The workspace has a team someone else is in: every live card can be
+      commented on in place. */
+  commentsEnabled?: boolean;
 };
+
+/**
+ * Threads the reader opened, by memo id. The virtualized timeline remounts
+ * cards as they scroll back into view; an open thread stays open.
+ */
+const openThreads = new Set<string>();
 
 export const MemoCard = memo(function MemoCard({
   memo,
@@ -61,6 +88,8 @@ export const MemoCard = memo(function MemoCard({
   onRequestDelete,
   onRequestShareImage,
   onRequestVisibility,
+  onEditingChange,
+  commentsEnabled = false,
 }: MemoCardProps) {
   // Expansion is per-card and resets on remount; it outlives an edit
   // round-trip, so it stays above the body/editor switch.
@@ -73,6 +102,41 @@ export const MemoCard = memo(function MemoCard({
   // session (Esc while a paste is still settling) keeps its target.
   const editEditorRef = useRef<Editor | null>(null);
   const isTrashed = memo.state === "trashed";
+  const [commentsOpen, setCommentsOpen] = useState(() =>
+    openThreads.has(memo.id),
+  );
+  // Focus the reply box only when the reader just opened the thread, not
+  // when a remount restores it.
+  const [focusReply, setFocusReply] = useState(false);
+  const toggleComments = useCallback(() => {
+    setCommentsOpen((open) => {
+      const next = !open;
+      if (next) openThreads.add(memo.id);
+      else openThreads.delete(memo.id);
+      return next;
+    });
+    setFocusReply(true);
+  }, [memo.id]);
+
+  // The virtualized list may unmount a card at any scroll offset. While the
+  // editor is open that would throw away the draft, so every write to
+  // `isEditing` — including the one inside useMemoCardActions' save path —
+  // goes through this wrapper, which reports the state to the list.
+  // The report happens beside the state write, not inside an updater:
+  // updaters run during render, and setting the list's state from there is
+  // React's "cannot update a component while rendering another" error.
+  const editingRef = useRef(false);
+  const setEditing = useCallback<Dispatch<SetStateAction<boolean>>>(
+    (value) => {
+      const previous = editingRef.current;
+      const next = typeof value === "function" ? value(previous) : value;
+      if (next === previous) return;
+      editingRef.current = next;
+      setIsEditing(next);
+      onEditingChange?.(memo.name, next);
+    },
+    [memo.name, onEditingChange],
+  );
 
   const { changeVisibility, id, prefetchDetail, saveEditing, taskInteraction } =
     useMemoCardActions({
@@ -84,28 +148,44 @@ export const MemoCard = memo(function MemoCard({
       onShare,
       onUpdate,
       share,
-      setIsEditing,
+      setIsEditing: setEditing,
       setIsSaving,
     });
 
+  const canOpenThread = canOpenMemoThread(memo, commentsEnabled);
+
   const startEditing = () => {
     setDraftContent(memo.content);
-    setIsEditing(true);
+    setEditing(true);
   };
+
+  const stopEditing = () => setEditing(false);
+  const beginEditing = startEditing;
 
   return (
     <article
       data-memo-id={memo.id}
       className={cn(
-        "group relative flex w-full flex-col gap-2 rounded-xl border border-border/50 bg-card/60 px-3.5 py-4 text-card-foreground [content-visibility:auto] [contain-intrinsic-size:auto_120px] motion-safe:animate-rise motion-safe:transition-[background-color,border-color,transform,box-shadow] motion-safe:duration-150 hover:border-border hover:bg-card hover:shadow-xs motion-safe:hover:-translate-y-px",
+        "paper group relative flex w-full flex-col gap-2 rounded-xl border border-border/60 bg-card px-4 py-3.5 text-card-foreground shadow-xs [content-visibility:auto] [contain-intrinsic-size:auto_120px] motion-safe:animate-rise motion-safe:transition-[border-color,box-shadow] motion-safe:duration-150 hover:border-border hover:shadow-sm sm:px-5 sm:py-4",
+        // Pinned: a slim inset ember bar (one of the four places the brand
+        // gradient is allowed), instead of a thick colored border.
         memo.pinned &&
-          "border-l-brand-500 border-l-[3px] dark:border-l-brand-400 bg-card",
-        isFocused && "ring-2 ring-brand-400/60 shadow-xs bg-card",
-        isEditing && "bg-card shadow-xs ring-1 ring-brand-400/40",
+          "before:pointer-events-none before:absolute before:inset-y-4 before:start-0 before:w-[3px] before:rounded-e-full before:bg-brand-gradient",
+        isFocused && "border-ring/60 ring-3 ring-ring/20",
+        isEditing && "border-ring/50 shadow-sm ring-3 ring-ring/15",
       )}
       style={{ animationDelay: `${Math.min(index, 7) * 35}ms` }}
     >
       <MemoCardHeader
+        commentAction={
+          canOpenThread ? (
+            <MemoCommentButton
+              count={memo.comment_count ?? 0}
+              open={commentsOpen}
+              onToggle={toggleComments}
+            />
+          ) : null
+        }
         memo={memo}
         id={id}
         isTrashed={isTrashed}
@@ -116,7 +196,7 @@ export const MemoCard = memo(function MemoCard({
         onHardDelete={onHardDelete}
         onPin={onPin}
         onRestore={onRestore}
-        onStartEditing={startEditing}
+        onStartEditing={beginEditing}
         onTrash={onTrash}
         share={share}
         onShare={onShare}
@@ -134,7 +214,7 @@ export const MemoCard = memo(function MemoCard({
           setIsUploadingInline={setIsUploadingInline}
           editorRef={editEditorRef}
           memoName={memo.name}
-          onCancel={() => setIsEditing(false)}
+          onCancel={stopEditing}
           onContentChange={setDraftContent}
           onSave={saveEditing}
         />
@@ -148,6 +228,16 @@ export const MemoCard = memo(function MemoCard({
           onToggleExpanded={() => setExpanded((value) => !value)}
           searchQuery={searchQuery}
           taskInteraction={taskInteraction}
+          canOpenThread={canOpenThread}
+        />
+      )}
+      {commentsOpen && !isEditing && canOpenThread && (
+        <MemoComments
+          autoFocus={focusReply}
+          canComment
+          memoId={memo.id}
+          mentions={commentsEnabled && memo.visibility !== "private"}
+          variant="inline"
         />
       )}
     </article>

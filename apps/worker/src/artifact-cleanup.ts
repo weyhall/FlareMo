@@ -1,3 +1,4 @@
+import { thumbnailKeyFor } from "@flaremo/contracts/constants";
 import {
   chunkIdsForMemo,
   type FlaremoAccountArtifacts,
@@ -11,14 +12,14 @@ export async function cleanupFlaremoArtifacts(
   artifacts: FlaremoAccountArtifacts,
 ): Promise<void> {
   if (env.ATTACHMENTS) {
-    for (
-      let offset = 0;
-      offset < artifacts.attachmentR2Keys.length;
-      offset += 500
-    ) {
-      await env.ATTACHMENTS.delete(
-        artifacts.attachmentR2Keys.slice(offset, offset + 500),
-      );
+    // The artifacts list carries originals only; previews share their key with
+    // a derived suffix, so expand before deleting or they outlive the account.
+    const keys = artifacts.attachmentR2Keys.flatMap((key) => [
+      key,
+      thumbnailKeyFor(key),
+    ]);
+    for (let offset = 0; offset < keys.length; offset += 500) {
+      await env.ATTACHMENTS.delete(keys.slice(offset, offset + 500));
     }
   }
 
