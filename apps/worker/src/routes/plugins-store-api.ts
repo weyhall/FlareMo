@@ -17,6 +17,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getBrowserRequestContext, type HonoBindings } from "../context";
 import { jsonError } from "../http";
+import { invalidatePluginSettingsCache } from "../settings-cache";
 
 /**
  * Owner-only plugin store: browse directory sources, install/uninstall
@@ -224,6 +225,7 @@ pluginsStoreApi.put(
       const settings = await setPluginSettings(db, {
         sources: c.req.valid("json").sources,
       });
+      invalidatePluginSettingsCache(db);
       return c.json({ sources: settings.sources });
     } catch (error) {
       return jsonError(c, error);
@@ -259,6 +261,7 @@ async function installPackage(
   const settings = await setPluginSettings(db, {
     installed: [...rest, installed],
   });
+  invalidatePluginSettingsCache(db);
   return { settings, installed };
 }
 
@@ -364,6 +367,7 @@ pluginsStoreApi.delete("/:id", async (c) => {
       enabledPlugins: current.enabledPlugins.filter((entry) => entry !== id),
       disabledPlugins: current.disabledPlugins.filter((entry) => entry !== id),
     });
+    invalidatePluginSettingsCache(db);
     return c.json({ removed: true, id, installed: settings.installed });
   } catch (error) {
     return jsonError(c, error);

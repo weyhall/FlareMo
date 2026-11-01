@@ -1,12 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { listMemoryRevisions } from "@/api";
-import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/i18n";
 import { formatTimestamp } from "./memory-filters";
@@ -23,20 +17,11 @@ export function MemoryRevisions({ memoryId }: { memoryId: string }) {
   }
   if (revisionsQuery.isError) {
     return (
-      <Empty className="min-h-40 border">
-        <EmptyHeader>
-          <EmptyTitle>{t("list.errorTitle")}</EmptyTitle>
-          <EmptyDescription>{t("list.errorDescription")}</EmptyDescription>
-        </EmptyHeader>
-        <Button
-          className="mt-2"
-          size="sm"
-          variant="outline"
-          onClick={() => void revisionsQuery.refetch()}
-        >
-          {t("common.retry")}
-        </Button>
-      </Empty>
+      <QueryErrorState
+        className="min-h-40 border text-muted-foreground"
+        isRetrying={revisionsQuery.isFetching}
+        onRetry={() => void revisionsQuery.refetch()}
+      />
     );
   }
   const revisions = revisionsQuery.data?.revisions ?? [];

@@ -16,6 +16,7 @@ import {
   tasks,
 } from "@flaremo/db";
 import { asc, eq, inArray } from "drizzle-orm";
+import { chunkForD1, d1IdsPerStatement } from "../d1-limits";
 
 /**
  * The export half of import-export.ts, moved verbatim: dumps every
@@ -69,10 +70,12 @@ export async function exportData(
 
   const memoIds = new Set(memoRows.map((memo) => memo.id));
   const relationRows: Array<typeof memoRelations.$inferSelect> = [];
-  const memoIdList = Array.from(memoIds);
-  for (let offset = 0; offset < memoIdList.length; offset += 500) {
-    const memoIdChunk = memoIdList.slice(offset, offset + 500);
-    if (memoIdChunk.length === 0) continue;
+  // One binding per id: D1 rejects the whole statement past 100, and the old
+  // 500-row pages failed outright on any account with more than 100 memos.
+  for (const memoIdChunk of chunkForD1(
+    Array.from(memoIds),
+    d1IdsPerStatement(),
+  )) {
     relationRows.push(
       ...(await db
         .select()
@@ -82,7 +85,7 @@ export async function exportData(
     );
   }
   return {
-    version: 5,
+    version: 6,
     exported_at: new Date().toISOString(),
     memos: memoRows.map((memo) => ({
       name: memo.id,
@@ -92,6 +95,7 @@ export async function exportData(
       pinned: memo.pinned,
       payload: memo.payload ?? {},
       source: memo.source,
+      team_id: memo.teamId,
       create_time: memo.createdAt,
       update_time: memo.updatedAt,
       display_time: memo.createdAt,
@@ -126,7 +130,8 @@ export async function exportData(
       name: share.id,
       id: share.id.replace(/^shares\//, ""),
       memo: share.memoId,
-      token: share.token,
+      // The token is a capability URL: never write a working one into an
+      // export file. Import mints a fresh token for every restored share.
       expires_at: share.expiresAt,
       create_time: share.createdAt,
       update_time: share.updatedAt,

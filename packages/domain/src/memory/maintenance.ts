@@ -19,7 +19,7 @@ import {
 } from "drizzle-orm";
 import { insertEmbeddingTask } from "../embedding-outbox";
 import { createResourceId } from "../ids";
-import { appendMemoryEvent } from "./shared";
+import { memoryEventStatement } from "./shared";
 
 /**
  * Daily memory-ledger upkeep, driven by the shared maintenance cron.
@@ -43,6 +43,32 @@ export const INFERRED_PROPOSAL_TTL_DAYS = 14;
 const MAINTENANCE_BATCH = 200;
 /** Archives kept per user; older ones are pruned by the daily sweep. */
 const COMPILE_ARCHIVE_RETENTION = 200;
+
+/** Archive cap per sweep before flushing one `db.batch`. */
+const MAINTENANCE_STATEMENT_BATCH = 50;
+
+/**
+ * Flush prepared maintenance statements in slices. These sweeps run on a daily
+ * cron over up to 200 rows, and issuing one awaited statement per row turned
+ * each into hundreds of serial D1 round trips.
+ */
+async function flushMaintenanceStatements(
+  db: FlareMoDb,
+  statements: unknown[],
+): Promise<void> {
+  for (
+    let offset = 0;
+    offset < statements.length;
+    offset += MAINTENANCE_STATEMENT_BATCH
+  ) {
+    await db.batch(
+      statements.slice(
+        offset,
+        offset + MAINTENANCE_STATEMENT_BATCH,
+      ) as unknown as Parameters<FlareMoDb["batch"]>[0],
+    );
+  }
+}
 
 export async function expireStaleInferredProposals(
   db: FlareMoDb,
@@ -69,29 +95,33 @@ export async function expireStaleInferredProposals(
   if (stale.length === 0) return 0;
   const nowIso = now.toISOString();
 
+  const statements: unknown[] = [];
   for (const row of stale) {
-    await db
-      .update(memoryItems)
-      .set({
-        status: "archived",
-        needsReview: false,
-        reviewReason: "expired",
-        updatedAt: nowIso,
-      })
-      .where(
-        and(eq(memoryItems.id, row.id), eq(memoryItems.userId, row.userId)),
-      );
-
-    await appendMemoryEvent(
-      db,
-      row.userId,
-      row.id,
-      "archived",
-      "agent",
-      "maintenance",
-      { reason: "inferred_expired", ttl_days: INFERRED_PROPOSAL_TTL_DAYS },
+    statements.push(
+      db
+        .update(memoryItems)
+        .set({
+          status: "archived",
+          needsReview: false,
+          reviewReason: "expired",
+          updatedAt: nowIso,
+        })
+        .where(
+          and(eq(memoryItems.id, row.id), eq(memoryItems.userId, row.userId)),
+        ),
+      memoryEventStatement(
+        db,
+        row.userId,
+        row.id,
+        "archived",
+        "agent",
+        "maintenance",
+        { reason: "inferred_expired", ttl_days: INFERRED_PROPOSAL_TTL_DAYS },
+        nowIso,
+      ),
     );
   }
+  await flushMaintenanceStatements(db, statements);
   return stale.length;
 }
 
@@ -151,22 +181,26 @@ export async function reclaimStaleMemoryVectors(
     .limit(limit);
 
   let queued = 0;
+  const statements: unknown[] = [];
   for (const row of stale) {
-    await insertEmbeddingTask(db, {
-      userId: row.userId,
-      resourceType: "memory",
-      resourceId: row.id,
-      operation: "delete",
-      createdAt: nowIso,
-    });
-    await db
-      .update(memoryItems)
-      .set({ embeddingStatus: "not_indexed", updatedAt: nowIso })
-      .where(
-        and(eq(memoryItems.id, row.id), eq(memoryItems.userId, row.userId)),
-      );
+    statements.push(
+      insertEmbeddingTask(db, {
+        userId: row.userId,
+        resourceType: "memory",
+        resourceId: row.id,
+        operation: "delete",
+        createdAt: nowIso,
+      }),
+      db
+        .update(memoryItems)
+        .set({ embeddingStatus: "not_indexed", updatedAt: nowIso })
+        .where(
+          and(eq(memoryItems.id, row.id), eq(memoryItems.userId, row.userId)),
+        ),
+    );
     queued += 1;
   }
+  await flushMaintenanceStatements(db, statements);
   return queued;
 }
 
@@ -241,6 +275,7 @@ export async function checkEvidenceStaleness(
   const nowIso = now.toISOString();
   let stale = 0;
   let missing = 0;
+  const statements: unknown[] = [];
 
   const sourceIds = Array.from(new Set(rows.map((r) => r.sourceId)));
   const memoMap = new Map<string, string>();
@@ -260,29 +295,29 @@ export async function checkEvidenceStaleness(
     if (!currentContent) {
       // Source vanished: badge the evidence and push the memory back into
       // the review inbox — only the human can re-take or retire it.
-      await db
-        .update(memoryEvidence)
-        .set({ missingAt: nowIso })
-        .where(eq(memoryEvidence.id, row.id));
-      await db
-        .update(memoryItems)
-        .set({
-          needsReview: true,
-          reviewReason: "evidence_stale",
-          updatedAt: nowIso,
-        })
-        .where(eq(memoryItems.id, row.memoryId));
-      await appendMemoryEvent(
-        db,
-        row.userId,
-        row.memoryId,
-        "challenged",
-        "agent",
-        "maintenance",
-        {
-          evidence_id: row.id,
-          reason: "evidence_missing",
-        },
+      statements.push(
+        db
+          .update(memoryEvidence)
+          .set({ missingAt: nowIso })
+          .where(eq(memoryEvidence.id, row.id)),
+        db
+          .update(memoryItems)
+          .set({
+            needsReview: true,
+            reviewReason: "evidence_stale",
+            updatedAt: nowIso,
+          })
+          .where(eq(memoryItems.id, row.memoryId)),
+        memoryEventStatement(
+          db,
+          row.userId,
+          row.memoryId,
+          "challenged",
+          "agent",
+          "maintenance",
+          { evidence_id: row.id, reason: "evidence_missing" },
+          nowIso,
+        ),
       );
       missing += 1;
       continue;
@@ -293,13 +328,16 @@ export async function checkEvidenceStaleness(
     if (!stillQuoted) {
       // The quoted basis no longer appears verbatim: the source was changed.
       // Badge only — this is informational, not a review-inbox event.
-      await db
-        .update(memoryEvidence)
-        .set({ staleAt: nowIso })
-        .where(eq(memoryEvidence.id, row.id));
+      statements.push(
+        db
+          .update(memoryEvidence)
+          .set({ staleAt: nowIso })
+          .where(eq(memoryEvidence.id, row.id)),
+      );
       stale += 1;
     }
   }
+  await flushMaintenanceStatements(db, statements);
 
   return { stale, missing };
 }
@@ -316,13 +354,21 @@ export async function pruneCompileArchives(
     .groupBy(memoryItems.userId)
     .limit(200);
 
+  // One grouped count instead of a count query per owner.
+  const totals = new Map<string, number>();
+  const counts = await db
+    .select({
+      userId: memoryCompileArchives.userId,
+      n: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(memoryCompileArchives)
+    .groupBy(memoryCompileArchives.userId);
+  for (const row of counts) totals.set(row.userId, row.n);
+
   let pruned = 0;
+  const statements: unknown[] = [];
   for (const owner of owners) {
-    const count = await db
-      .select({ n: sql<number>`count(*)` })
-      .from(memoryCompileArchives)
-      .where(eq(memoryCompileArchives.userId, owner.userId));
-    const total = count[0]?.n ?? 0;
+    const total = totals.get(owner.userId) ?? 0;
     if (total <= COMPILE_ARCHIVE_RETENTION) continue;
 
     const excess = total - COMPILE_ARCHIVE_RETENTION;
@@ -333,14 +379,17 @@ export async function pruneCompileArchives(
       .orderBy(memoryCompileArchives.createdAt)
       .limit(Math.min(excess, limit));
     if (stalest.length === 0) continue;
-    await db.delete(memoryCompileArchives).where(
-      inArray(
-        memoryCompileArchives.id,
-        stalest.map((row) => row.id),
+    statements.push(
+      db.delete(memoryCompileArchives).where(
+        inArray(
+          memoryCompileArchives.id,
+          stalest.map((row) => row.id),
+        ),
       ),
     );
     pruned += stalest.length;
   }
+  await flushMaintenanceStatements(db, statements);
   return pruned;
 }
 
@@ -385,36 +434,41 @@ export async function sinkDormantObservedMemories(
     )
     .limit(limit);
 
+  const statements: unknown[] = [];
   for (const row of dormant) {
-    await db
-      .update(memoryItems)
-      .set({
-        status: "archived",
-        updatedAt: nowIso,
-      })
-      .where(
-        and(eq(memoryItems.id, row.id), eq(memoryItems.userId, row.userId)),
-      );
-    await appendMemoryEvent(
-      db,
-      row.userId,
-      row.id,
-      "archived",
-      "agent",
-      "maintenance",
-      {
-        reason: "dormancy_sink",
-        dormancy_days: OBSERVED_DORMANCY_DAYS,
-      },
+    statements.push(
+      db
+        .update(memoryItems)
+        .set({
+          status: "archived",
+          updatedAt: nowIso,
+        })
+        .where(
+          and(eq(memoryItems.id, row.id), eq(memoryItems.userId, row.userId)),
+        ),
+      memoryEventStatement(
+        db,
+        row.userId,
+        row.id,
+        "archived",
+        "agent",
+        "maintenance",
+        {
+          reason: "dormancy_sink",
+          dormancy_days: OBSERVED_DORMANCY_DAYS,
+        },
+        nowIso,
+      ),
+      insertEmbeddingTask(db, {
+        userId: row.userId,
+        resourceType: "memory",
+        resourceId: row.id,
+        operation: "delete",
+        createdAt: nowIso,
+      }),
     );
-    await insertEmbeddingTask(db, {
-      userId: row.userId,
-      resourceType: "memory",
-      resourceId: row.id,
-      operation: "delete",
-      createdAt: nowIso,
-    });
   }
+  await flushMaintenanceStatements(db, statements);
   return dormant.length;
 }
 
@@ -444,43 +498,50 @@ export async function foldOldRevisions(
     .limit(limit);
 
   let folded = 0;
+  const statements: unknown[] = [];
   for (const group of crowded) {
-    const all = await db
+    // Only the oldest `excess` rows are folded, so read that many rather than
+    // the memory's entire revision history.
+    const excess = group.total - REVISION_FOLD_THRESHOLD;
+    if (excess <= 0) continue;
+    const toFold = await db
       .select()
       .from(memoryRevisions)
       .where(eq(memoryRevisions.memoryId, group.memoryId))
-      .orderBy(memoryRevisions.createdAt);
-    const excess = all.length - REVISION_FOLD_THRESHOLD;
-    if (excess <= 0 || all.length === 0) continue;
-    const toFold = all.slice(0, excess);
+      .orderBy(memoryRevisions.createdAt)
+      .limit(excess);
     const oldest = toFold[0];
     if (!oldest) continue;
     // One milestone snapshot replaces the folded tail: the oldest revision's
-    // content, stamped as a maintenance milestone.
-    await db.insert(memoryRevisions).values({
-      id: createResourceId("memories"),
-      memoryId: group.memoryId,
-      userId: group.userId,
-      content: oldest.content,
-      metadataSnapshot: {
-        milestone: true,
-        folded_count: toFold.length,
-        folded_span: {
-          from: oldest.createdAt,
-          to: toFold[toFold.length - 1]?.createdAt ?? oldest.createdAt,
+    // content, stamped as a maintenance milestone. The insert and the delete
+    // go into the same batch so a partial run cannot drop history.
+    statements.push(
+      db.insert(memoryRevisions).values({
+        id: createResourceId("memories"),
+        memoryId: group.memoryId,
+        userId: group.userId,
+        content: oldest.content,
+        metadataSnapshot: {
+          milestone: true,
+          folded_count: toFold.length,
+          folded_span: {
+            from: oldest.createdAt,
+            to: toFold[toFold.length - 1]?.createdAt ?? oldest.createdAt,
+          },
         },
-      },
-      createdByType: "agent",
-      createdByAgent: "maintenance",
-      createdAt: oldest.createdAt,
-    });
-    await db.delete(memoryRevisions).where(
-      inArray(
-        memoryRevisions.id,
-        toFold.map((row) => row.id),
+        createdByType: "agent",
+        createdByAgent: "maintenance",
+        createdAt: oldest.createdAt,
+      }),
+      db.delete(memoryRevisions).where(
+        inArray(
+          memoryRevisions.id,
+          toFold.map((row) => row.id),
+        ),
       ),
     );
-    folded += excess;
+    folded += toFold.length;
   }
+  await flushMaintenanceStatements(db, statements);
   return folded;
 }

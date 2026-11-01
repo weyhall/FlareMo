@@ -137,6 +137,14 @@ export const memoryItems = sqliteTable(
       table.kind,
     ),
     index("memory_items_user_tier_idx").on(table.userId, table.tier),
+    // The memory list and the review inbox both page by
+    // (user_id, updated_at DESC, id DESC); without this the whole user's
+    // memory set is read and sorted on every request.
+    index("memory_items_user_updated_id_idx").on(
+      table.userId,
+      table.updatedAt,
+      table.id,
+    ),
     uniqueIndex("memory_items_user_fingerprint_idx")
       .on(table.userId, table.fingerprint)
       .where(sql`${table.status} = 'active'`),
@@ -148,6 +156,15 @@ export const memoryItems = sqliteTable(
     uniqueIndex("memory_items_user_idempotency_idx")
       .on(table.userId, table.idempotencyKey)
       .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    // `getMemoryLineage` reads a superseded chain by (user_id, fact_key) and
+    // orders by created_at. The scope index above puts fact_key behind the
+    // scope columns, and the unique active-only index cannot serve superseded
+    // rows, so both missed the predicate.
+    index("memory_items_user_fact_key_created_idx").on(
+      table.userId,
+      table.factKey,
+      table.createdAt,
+    ),
     // The two daily maintenance sweeps filter globally (not per user), so
     // neither user-leading index above can serve them. These partial indexes
     // cover exactly the predicates in expireStaleInferredProposals and
@@ -160,6 +177,14 @@ export const memoryItems = sqliteTable(
     index("memory_items_vector_reclaim_sweep_idx")
       .on(table.embeddingStatus)
       .where(sql`${table.embeddingStatus} IN ('indexed', 'pending', 'error')`),
+    // sinkDormantObservedMemories filters globally on the dormancy predicate
+    // (never recalled, or last recalled before a cutoff) and had no index at
+    // all — a full scan of the largest memory table on every daily sweep.
+    index("memory_items_dormant_sweep_idx")
+      .on(table.lastAccessedAt, table.createdAt)
+      .where(
+        sql`${table.status} = 'active' AND ${table.verification} = 'observed' AND ${table.needsReview} = 0`,
+      ),
   ],
 );
 
@@ -304,6 +329,10 @@ export const memoryEvidence = sqliteTable(
   },
   (table) => [
     index("memory_evidence_memory_idx").on(table.memoryId),
+    index("memory_evidence_memory_created_idx").on(
+      table.memoryId,
+      table.createdAt,
+    ),
     index("memory_evidence_source_idx").on(table.sourceType, table.sourceId),
     index("memory_evidence_user_idx").on(table.userId),
   ],

@@ -136,6 +136,8 @@ export const listTasksQuerySchema = z.object({
   priority: taskPrioritySchema.optional(),
   due_from: dateKey.optional(),
   due_to: dateKey.optional(),
+  // Tasks scheduled from one memo (`memos/<id>`).
+  source_memo_id: z.string().trim().max(256).optional(),
   // Recycle bin: include soft-deleted tasks.
   include_deleted: z.coerce.boolean().default(false),
   // Cursor pagination, mirroring the memos list contract.

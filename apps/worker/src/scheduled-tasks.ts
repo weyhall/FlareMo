@@ -1,8 +1,10 @@
+import { thumbnailKeyFor } from "@flaremo/contracts/constants";
 import { createDb, memosNotifications, tasks } from "@flaremo/db";
 import {
   beginFlaremoMemberRemoval,
   claimMemberRemovalJob,
   createDailyReviewNotifications,
+  createDueTodayTaskNotifications,
   createOverdueTaskNotifications,
   deleteExpiredDataTasks,
   dispatchEmbeddingOutbox,
@@ -23,6 +25,7 @@ import {
   listQueuedMemberRemovalJobs,
   MEMOS_SSE_RETENTION_MS,
   markArticleAttachmentsDeleting,
+  nextDayKey,
   type PlanLimits,
   type PushKeys,
   parseUserPlanLimits,
@@ -37,7 +40,7 @@ import {
   type UserPlanLimits,
   updateMemberRemovalJob,
 } from "@flaremo/domain";
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { cleanupFlaremoArtifacts } from "./artifact-cleanup";
 import { createEmbeddingProvider, createVectorIndex } from "./embedding";
 import type { FlareMoEnv } from "./env";
@@ -60,6 +63,9 @@ const ATTACHMENT_CLEANUP_BATCH = 100;
 // Safety bound for the drain loop: 100 batches x 100 rows = 10k rows/day.
 const MAX_ATTACHMENT_CLEANUP_BATCHES = 100;
 const DEFAULT_TRASH_RETENTION_DAYS = 30;
+// One purge query returns up to 200 rows; keep draining until the backlog is
+// empty or no row in a pass could be removed (a persistent failure).
+const MAX_TRASH_PURGE_BATCHES = 10;
 
 function parseTrashRetentionDays(value: string | undefined): number {
   const parsed = Number.parseInt(value?.trim() ?? "", 10);
@@ -247,7 +253,13 @@ export async function runScheduledMaintenance(
   for (let batch = 0; batch < MAX_ATTACHMENT_CLEANUP_BATCHES; batch++) {
     const candidates = await listAttachmentCleanupCandidates(db, orphanCutoff);
     if (candidates.length === 0) break;
-    const objectKeys = candidates.map((attachment) => attachment.r2Key);
+    // Originals plus their derived previews; a preview's key is the original
+    // with a fixed suffix, so it is not discoverable by a later sweep.
+    const objectKeys = candidates.flatMap((attachment) =>
+      attachment.payload?.thumbnail === true
+        ? [attachment.r2Key, thumbnailKeyFor(attachment.r2Key)]
+        : [attachment.r2Key],
+    );
     await env.ATTACHMENTS.delete(objectKeys);
     await finalizeAttachmentCleanupForIds(
       db,
@@ -270,12 +282,34 @@ export async function runScheduledMaintenance(
     const trashCutoff = new Date(
       scheduledTime - retentionDays * 24 * 60 * 60 * 1_000,
     ).toISOString();
-    const expired = await listExpiredTrashedMemos(db, trashCutoff);
-    for (const { id: memoId, userId } of expired) {
-      const owner = await getFlaremoUserById(db, userId);
-      if (!owner) continue;
-      await hardDeleteMemoWithAttachments(env, db, owner, memoId);
-      trashPurgeCount += 1;
+    for (let batch = 0; batch < MAX_TRASH_PURGE_BATCHES; batch++) {
+      const expired = await listExpiredTrashedMemos(db, trashCutoff);
+      if (expired.length === 0) break;
+      let purgedThisPass = 0;
+      for (const { id: memoId, userId } of expired) {
+        // One bad row (R2 hiccup, a missing author, a stale permission) must
+        // not abort the rest of the maintenance run — this loop used to throw
+        // before the attachment GC, counters, notifications and reminders.
+        try {
+          const owner = await getFlaremoUserById(db, userId);
+          if (!owner) continue;
+          await hardDeleteMemoWithAttachments(env, db, owner, memoId);
+          purgedThisPass += 1;
+          trashPurgeCount += 1;
+        } catch (error) {
+          console.error(
+            JSON.stringify({
+              message: "trash purge skipped a memo",
+              memoId,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
+      }
+      // The query only returns rows that are still trashed, so a pass that
+      // removed nothing would repeat the same failures forever.
+      if (purgedThisPass === 0) break;
+      if (expired.length < 200) break;
     }
     // Articles: soft-deleted articles past the retention window hard-delete
     // with their attachment binaries (same R2 sweep contract as memos).
@@ -288,8 +322,10 @@ export async function runScheduledMaintenance(
         owner,
         articleId,
       );
-      const objectKeys = articleAttachments.map(
-        (attachment) => attachment.r2Key,
+      const objectKeys = articleAttachments.flatMap((attachment) =>
+        attachment.payload?.thumbnail === true
+          ? [attachment.r2Key, thumbnailKeyFor(attachment.r2Key)]
+          : [attachment.r2Key],
       );
       if (objectKeys.length > 0) {
         await env.ATTACHMENTS.delete(objectKeys);
@@ -316,17 +352,27 @@ export async function runScheduledMaintenance(
   // Reconcile data-transfer tasks: expire stale queued/running tasks whose
   // lease lapsed (interrupted request), then garbage-collect completed task
   // rows older than the TTL along with their R2 export artifacts.
-  const staleCount = await expireStaleDataTasks(db);
+  const staleCount = await expireStaleDataTasks(
+    db,
+    new Date(),
+    undefined,
+    async (_taskId, keys) => {
+      await env.ATTACHMENTS.delete(keys);
+    },
+  );
   const expiredIds = await deleteExpiredDataTasks(db);
   for (const id of expiredIds) {
-    const prefix = `exports/${id}`;
-    let cursor: string | undefined;
-    do {
-      const listing = await env.ATTACHMENTS.list({ prefix, cursor });
-      const keys = listing.objects.map((object) => object.key);
-      if (keys.length > 0) await env.ATTACHMENTS.delete(keys);
-      cursor = listing.truncated ? listing.cursor : undefined;
-    } while (cursor);
+    // Export manifests and import bundles use distinct prefixes; both are
+    // task-scoped and safe to drop once the row is gone.
+    for (const prefix of [`exports/${id}`, `imports/${id}`]) {
+      let cursor: string | undefined;
+      do {
+        const listing = await env.ATTACHMENTS.list({ prefix, cursor });
+        const keys = listing.objects.map((object) => object.key);
+        if (keys.length > 0) await env.ATTACHMENTS.delete(keys);
+        cursor = listing.truncated ? listing.cursor : undefined;
+      } while (cursor);
+    }
   }
   // Rebuild the derived memo activity counter. Every memo write adjusts it
   // inside the same batch, so this pass exists only to heal drift: a
@@ -347,6 +393,10 @@ export async function runScheduledMaintenance(
   // Overdue task reminders file once per task per due date; the unique
   // source-event index absorbs cron retries.
   const overdueNotificationCount = await createOverdueTaskNotifications(db, {
+    date: reviewDate,
+  });
+  // Dated to-dos remind on their day: one row per task due today.
+  const dueTodayNotificationCount = await createDueTodayTaskNotifications(db, {
     date: reviewDate,
   });
   // Fire the Web Push reminders alongside the notification rows. Push stays
@@ -393,6 +443,29 @@ export async function runScheduledMaintenance(
         url: "/projects",
       }).catch(() => undefined);
     }
+    // The day a dated to-do falls due, one aggregate push per user.
+    const dueTodayByUser = await db
+      .select({
+        userId: tasks.userId,
+        count: sql<number>`count(*)`.mapWith(Number),
+      })
+      .from(tasks)
+      .where(
+        and(
+          isNull(tasks.deletedAt),
+          gte(tasks.dueAt, reviewDate),
+          lt(tasks.dueAt, nextDayKey(reviewDate)),
+          inArray(tasks.status, ["todo", "in_progress"]),
+        ),
+      )
+      .groupBy(tasks.userId);
+    for (const row of dueTodayByUser) {
+      await pushNotificationToUser(db, pushKeys, row.userId, {
+        title: "FlareMo 今日待办",
+        body: `今天有 ${row.count} 项待办到期。`,
+        url: "/projects",
+      }).catch(() => undefined);
+    }
   }
   console.log(
     JSON.stringify({
@@ -404,6 +477,7 @@ export async function runScheduledMaintenance(
       expiredTaskCount: expiredIds.length,
       reviewNotificationCount,
       overdueNotificationCount,
+      dueTodayNotificationCount,
       scheduledTime,
     }),
   );

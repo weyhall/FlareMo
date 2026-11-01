@@ -292,12 +292,41 @@ export async function listArticles(
   const filters = [eq(articles.userId, user.id)];
   if (!input.includeDeleted) filters.push(isNull(articles.deletedAt));
   if (input.status) filters.push(eq(articles.status, input.status));
+  // Summary rows never carry `content`, but `select()` read it anyway — up to
+  // 200 KB per article, then discarded by articleToSummaryDto. Naming the
+  // columns keeps the list endpoint proportional to metadata size.
   const rows = await db
-    .select()
+    .select({
+      id: articles.id,
+      userId: articles.userId,
+      slug: articles.slug,
+      title: articles.title,
+      description: articles.description,
+      status: articles.status,
+      coverAttachmentId: articles.coverAttachmentId,
+      lang: articles.lang,
+      publishedAt: articles.publishedAt,
+      deletedAt: articles.deletedAt,
+      createdAt: articles.createdAt,
+      updatedAt: articles.updatedAt,
+    })
     .from(articles)
     .where(and(...filters))
     .orderBy(desc(articles.updatedAt), desc(articles.id));
-  return rows.map(articleToSummaryDto);
+  return rows.map((row) => ({
+    id: row.id,
+    user_id: row.userId,
+    slug: row.slug,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    cover_attachment_id: row.coverAttachmentId,
+    lang: row.lang,
+    published_at: row.publishedAt,
+    deleted_at: row.deletedAt,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  }));
 }
 
 // ---------------------------------------------------------------------------

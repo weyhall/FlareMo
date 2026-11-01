@@ -1,4 +1,5 @@
 import {
+  createMemoCommentSchema,
   createMemoryFromMemoSchema,
   createMemoSchema,
   listMemosQuerySchema,
@@ -10,7 +11,9 @@ import {
   updateNotificationSchema,
 } from "@flaremo/contracts";
 import {
+  countMemoComments,
   createMemo,
+  createMemoComment,
   createMemoryFromMemo,
   createMemoryFromMemoInputToWrite,
   deleteTag,
@@ -18,7 +21,9 @@ import {
   getMemoById,
   getMemoStats,
   listAttachmentsForMemos,
+  listMemoComments,
   listMemos,
+  listMentionableTeamMembers,
   listTagHierarchy,
   listUserNotifications,
   moveMemoToTrash,
@@ -43,6 +48,10 @@ function appNotificationToDto(notification: UserNotificationDto) {
     type: notification.type,
     status: notification.status,
     memo: notification.memo,
+    // The memo a comment or a comment mention belongs under.
+    related_memo: notification.relatedMemo ?? null,
+    // Who acted: the commenter or the person who mentioned you.
+    sender_name: notification.senderUser.name,
     memo_snippet: notification.memoSnippet,
     create_time: notification.createTime,
   };
@@ -55,12 +64,17 @@ export function registerMemoListRoutes(app: Hono<HonoBindings>) {
       const result = await listMemos(db, user, c.req.valid("query"), {
         celScanLimit: memoFilterScanLimit,
       });
-      const [creatorNames, attachments] = await Promise.all([
+      const [creatorNames, attachments, commentCounts] = await Promise.all([
         getFlaremoUserNames(
           db,
           result.memos.map((memo) => memo.userId),
         ),
         listAttachmentsForMemos(
+          db,
+          user,
+          result.memos.map((memo) => memo.id),
+        ),
+        countMemoComments(
           db,
           user,
           result.memos.map((memo) => memo.id),
@@ -76,14 +90,19 @@ export function registerMemoListRoutes(app: Hono<HonoBindings>) {
         current.push(attachment);
         attachmentsByMemo.set(attachment.memoId, current);
       }
-      return c.json(
-        memosToListResponse({
-          ...result,
-          attachmentsByMemo,
-          creatorNames,
-          user,
-        }),
-      );
+      const response = memosToListResponse({
+        ...result,
+        attachmentsByMemo,
+        creatorNames,
+        user,
+      });
+      return c.json({
+        ...response,
+        memos: response.memos.map((memo) => ({
+          ...memo,
+          comment_count: commentCounts.get(memo.name) ?? 0,
+        })),
+      });
     } catch (error) {
       return jsonError(c, error);
     }
@@ -111,6 +130,66 @@ export function registerMemoListRoutes(app: Hono<HonoBindings>) {
 }
 
 export function registerMemoCrudRoutes(app: Hono<HonoBindings>) {
+  // Who can be @mentioned: active team members, without emails.
+  app.get("/team/members", async (c) => {
+    try {
+      const { db, user } = await getRequestContext(c);
+      return c.json({ members: await listMentionableTeamMembers(db, user) });
+    } catch (error) {
+      return jsonError(c, error);
+    }
+  });
+  // Comments, oldest first: a thread reads top to bottom. Each comment is a
+  // memo linked to its parent; the timeline never lists them on their own.
+  app.get("/memos/:id/comments", async (c) => {
+    try {
+      const { db, user } = await getRequestContext(c);
+      const memoName = `memos/${c.req.param("id")}`;
+      const result = await listMemoComments(db, user, {
+        memoName,
+        pageSize: 200,
+        orderBy: "create_time asc",
+      });
+      const creatorNames = await getFlaremoUserNames(
+        db,
+        result.memos.map((memo) => memo.userId),
+      );
+      return c.json({
+        comments: memosToListResponse({
+          memos: result.memos,
+          creatorNames,
+          user,
+        }).memos,
+      });
+    } catch (error) {
+      return jsonError(c, error);
+    }
+  });
+  app.post(
+    "/memos/:id/comments",
+    zValidator("json", createMemoCommentSchema),
+    async (c) => {
+      try {
+        const { db, user, userLimits } = await getRequestContext(c);
+        const { content, client_id } = c.req.valid("json");
+        const comment = await createMemoComment(
+          db,
+          user,
+          `memos/${c.req.param("id")}`,
+          { content, payload: client_id ? { client_id } : {} },
+          { userLimits, userId: user.id },
+        );
+        const creatorNames = await getFlaremoUserNames(db, [comment.userId]);
+        return c.json(
+          memosToListResponse({ memos: [comment], creatorNames, user })
+            .memos[0],
+          201,
+        );
+      } catch (error) {
+        return jsonError(c, error);
+      }
+    },
+  );
   app.get("/memos/:id", async (c) => {
     try {
       const context = await getRequestContext(c);
