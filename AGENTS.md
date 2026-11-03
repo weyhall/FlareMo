@@ -26,7 +26,7 @@ pnpm build
 pnpm backup:drill
 ```
 
-`pnpm verify`（13 步全量门禁）只在维护者明确要求时运行，见下方「敏捷开发节奏」。
+`pnpm verify`（12 步全量门禁）只在维护者明确要求时运行，见下方「敏捷开发节奏」。
 
 本地开发：
 
@@ -57,7 +57,7 @@ pnpm deploy:dry-run
 pnpm deploy
 ```
 
-`pnpm verify` 是 13 步全量门禁（含 e2e），**只在维护者明确要求时执行**（发版也不需要）。
+`pnpm verify` 是 12 步全量门禁（含 e2e），**只在维护者明确要求时执行**（发版也不需要）。
 
 只验证 Cloudflare 配置和打包：
 
@@ -133,6 +133,7 @@ issue -> branch -> PR 流程只用于：对外贡献者、维护者明确要求�
 - `docs/release.md`：发版规则。
 - `docs/maintenance.md`：维护、备份和恢复。
 - `docs/memos-compatibility.md`：Memos 兼容矩阵。
+- `docs/import-from-memos.md`：从 Memos 0.31 导出包迁移到 FlareMo（英文版在 `docs/en/`）。
 - `docs/memos-ecosystem.md`：第三方客户端、认证方式和真实兼容验证记录。
 - `docs/design-system.md`：Ember 设计系统（色彩、字体、动效、组件和文案约定）。
 - `docs/semantic-search.md`：语义搜索、Vectorize 和 Workers AI 的边界。

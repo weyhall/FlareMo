@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { PinIcon } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import type { Memo, MemoVisibility, Share } from "@/api";
 import { MemoVisibilityDialog } from "@/components/memo-visibility-dialog";
 import { useI18n } from "@/i18n";
@@ -8,6 +9,8 @@ import { VisibilityBadge, VoiceBadge } from "./memo-card-badges";
 import { MemoCardMenu } from "./memo-card-menu";
 
 type MemoCardHeaderProps = {
+  /** The comment toggle, first in the trailing cluster. */
+  commentAction?: ReactNode;
   memo: Memo;
   id: string;
   isTrashed: boolean;
@@ -37,6 +40,7 @@ type MemoCardHeaderProps = {
  * instead, so the card keeps none.
  */
 export function MemoCardHeader({
+  commentAction,
   memo,
   id,
   isTrashed,
@@ -57,7 +61,7 @@ export function MemoCardHeader({
   onRequestShareImage,
   onRequestVisibility,
 }: MemoCardHeaderProps) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const [isVisibilityOpen, setIsVisibilityOpen] = useState(false);
   return (
     <>
@@ -69,10 +73,19 @@ export function MemoCardHeader({
           params={{ memoId: memo.id }}
           to="/memo/$memoId"
         >
+          {/* In a shared space the author comes first, the way a post
+              reads ("Kim · 3 分钟前"); a personal note has no audience
+              besides its author, so the name is noise there. */}
+          {memo.visibility !== "private" && memo.creator_name && (
+            <span className="shrink-0 font-medium text-foreground/80">
+              {memo.creator_name}
+              <span className="ms-2 font-normal text-muted-foreground">·</span>
+            </span>
+          )}
           {/* flomo's header rule: identity only, no placeholders. The
               timestamp is the sole anchor; hovering swaps relative for the
               absolute instant, so both facts live in one pixel row. */}
-          <span className="inline-grid [grid-template-areas:'stack'] items-center truncate">
+          <span className="inline-grid [grid-template-areas:'stack'] items-center justify-items-start truncate">
             <span className="[grid-area:stack] transition-opacity duration-150 group-hover:opacity-0 pointer-events-none">
               {formatMemoRelativeTime(memo.display_time, locale)}
             </span>
@@ -80,13 +93,17 @@ export function MemoCardHeader({
               {formatMemoTime(memo.display_time, locale)}
             </span>
           </span>
-          {/* Author belongs to the shared spaces: a personal note has no
-              audience besides its author, so the name is noise there. */}
-          {memo.visibility !== "private" && memo.creator_name && (
-            <span>· {memo.creator_name}</span>
-          )}
         </Link>
         <div className="flex shrink-0 items-center gap-1">
+          {commentAction}
+          {memo.pinned && memo.state === "normal" && (
+            <span
+              className="inline-flex size-6 items-center justify-center text-muted-foreground"
+              title={t("memo.pinned")}
+            >
+              <PinIcon aria-label={t("memo.pinned")} className="size-3.5" />
+            </span>
+          )}
           {memo.source === "voice" && <VoiceBadge memo={memo} />}
           {memo.visibility !== "private" && (
             <VisibilityBadge

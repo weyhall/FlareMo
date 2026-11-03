@@ -11,14 +11,13 @@
   "assets": {
     "directory": "./apps/web/dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
+    "not_found_handling": "none",
     "run_worker_first": [
       "/api/*",
       "/article/*",
       "/feed.xml",
       "/file/*",
       "/mcp",
-      "/memory/*",
       "/openapi.json",
       "/memos.api.v1.*",
       "/share/*",
@@ -69,10 +68,6 @@
     {
       "binding": "VECTORIZE_MEMOS",
       "index_name": "flaremo-memos"
-    },
-    {
-      "binding": "VECTORIZE_MEMORIES",
-      "index_name": "flaremo-memories"
     }
   ],
   "ai": {

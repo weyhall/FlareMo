@@ -1,18 +1,19 @@
-import { FLAREMO_API_VERSION } from "@flaremo/contracts";
+import { FLAREMO_API_VERSION } from "@flaremo/contracts/constants";
 import {
   canManageVoiceService,
+  countOrganizationMembers,
   getBranding,
   getMembershipState,
   isInstanceOwner,
   updateFlaremoUserProfile,
   ValidationError,
 } from "@flaremo/domain";
-import { zValidator } from "@hono/zod-validator";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { getRequestContext, type HonoBindings } from "../../context";
 import { jsonError } from "../../http";
 import { getAuthUserCached } from "../../identity-cache";
+import { zValidator } from "../../validated";
 import { normalizeGitHubRepository } from "./helpers";
 
 const FLAREMO_RELEASES_URL =
@@ -45,6 +46,10 @@ export function registerMeRoutes(app: Hono<HonoBindings>) {
         state?.role === "reader" &&
         state.expiresAt !== null &&
         state.expiresAt.getTime() <= Date.now();
+      const memberCount =
+        state && !teamExpired
+          ? await countOrganizationMembers(db, state.organizationId)
+          : 0;
       const avatarUrl = user.avatarUrl ?? resolvedAuthUser?.image ?? null;
       return c.json({
         id: user.id,
@@ -58,7 +63,11 @@ export function registerMeRoutes(app: Hono<HonoBindings>) {
         avatar_url: avatarUrl,
         team:
           state && !teamExpired
-            ? { id: state.organizationId, name: state.organizationName }
+            ? {
+                id: state.organizationId,
+                name: state.organizationName,
+                member_count: memberCount,
+              }
             : null,
         team_expired: teamExpired,
         ...(state?.role === "reader"
@@ -127,6 +136,15 @@ export function registerMeRoutes(app: Hono<HonoBindings>) {
       await c.env.ATTACHMENTS.put(key, bytes, {
         httpMetadata: { contentType },
       });
+      // The reader probes webp → png → jpg → gif in order, so an old-format
+      // object would keep winning after a format switch. Drop the siblings
+      // once the new object is safely written.
+      for (const other of ["webp", "png", "jpg", "gif"] as const) {
+        if (other === ext) continue;
+        await c.env.ATTACHMENTS.delete(
+          `avatars/users/${bareUserId}.${other}`,
+        ).catch(() => undefined);
+      }
       const avatarUrl = `/api/app/avatar/${encodeURIComponent(bareUserId)}?v=${Date.now()}`;
       await updateFlaremoUserProfile(db, user, {
         avatarUrl,
@@ -165,7 +183,11 @@ export function registerMeRoutes(app: Hono<HonoBindings>) {
       );
       if (object) {
         const headers = new Headers();
-        object.writeHttpMetadata(headers);
+        // Read the metadata directly instead of `writeHttpMetadata`: the
+        // latter hands the runtime a Headers object that Miniflare's R2 proxy
+        // cannot serialize in tests ("Cannot stringify arbitrary non-POJOs").
+        const contentType = object.httpMetadata?.contentType;
+        if (contentType) headers.set("content-type", contentType);
         headers.set("etag", object.httpEtag);
         headers.set("Cache-Control", "public, max-age=3600");
         return new Response(object.body, { headers });
