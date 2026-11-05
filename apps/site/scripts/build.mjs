@@ -26,11 +26,11 @@ const SUPPORTED_LOCALES = ["en", "zh", "ja", "fr", "es", "ko", "ru", "ar"];
 const DOC_SLUGS = [
   "agent-deploy",
   "agent-ingestion",
-  "agent-memory",
   "architecture-notes",
   "deploy",
   "design-system",
   "github-action-deploy",
+  "import-from-memos",
   "maintenance",
   "memos-compatibility",
   "memos-ecosystem",

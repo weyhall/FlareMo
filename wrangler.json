@@ -11,14 +11,13 @@
   "assets": {
     "directory": "./apps/web/dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
+    "not_found_handling": "none",
     "run_worker_first": [
       "/api/*",
       "/article/*",
       "/feed.xml",
       "/file/*",
       "/mcp",
-      "/memory/*",
       "/openapi.json",
       "/memos.api.v1.*",
       "/share/*",
@@ -69,10 +68,6 @@
     {
       "binding": "VECTORIZE_MEMOS",
       "index_name": "flaremo-memos"
-    },
-    {
-      "binding": "VECTORIZE_MEMORIES",
-      "index_name": "flaremo-memories"
     }
   ],
   "ai": {
@@ -89,11 +84,9 @@
     "crons": ["17 3 * * *"]
   },
   "vars": {
-    "FLAREMO_DEPLOY_REPOSITORY": "",
     "FLAREMO_SINGLE_USER_EMAIL": "owner@flaremo.local",
     "FLAREMO_SINGLE_USER_NAME": "FlareMo Owner",
     "FLAREMO_PUBLIC_URL": "https://flaremo.example.workers.dev",
-    "FLAREMO_TRUSTED_ORIGINS": "",
     "FLAREMO_EMBEDDING_PROVIDER": "workers-ai",
     "FLAREMO_EMBEDDING_MODEL": "@cf/qwen/qwen3-embedding-0.6b",
     "FLAREMO_EMBEDDING_DIMENSIONS": "1024",

@@ -1,5 +1,4 @@
 import {
-  ForbiddenError,
   getPluginSettings,
   type InstalledPluginRecord,
   type PluginSettings,
@@ -12,11 +11,13 @@ import {
   readPluginPackage,
   sha256Hex,
 } from "@flaremo/plugins/package";
-import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { getBrowserRequestContext, type HonoBindings } from "../context";
+import type { HonoBindings } from "../context";
 import { jsonError } from "../http";
+import { invalidatePluginSettingsCache } from "../settings-cache";
+import { zValidator } from "../validated";
+import { ownerContext } from "./admin/context";
 
 /**
  * Owner-only plugin store: browse directory sources, install/uninstall
@@ -94,14 +95,6 @@ const registrySchema = z.object({
 });
 
 type RegistryEntry = z.infer<typeof registryEntrySchema>;
-
-async function ownerContext(c: Parameters<typeof getBrowserRequestContext>[0]) {
-  const context = await getBrowserRequestContext(c);
-  if (context.user.id !== "users/owner") {
-    throw new ForbiddenError("Owner access is required.");
-  }
-  return context;
-}
 
 function resolveUrl(base: string, relative: string): string {
   return new URL(relative, base).toString();
@@ -224,6 +217,7 @@ pluginsStoreApi.put(
       const settings = await setPluginSettings(db, {
         sources: c.req.valid("json").sources,
       });
+      invalidatePluginSettingsCache(db);
       return c.json({ sources: settings.sources });
     } catch (error) {
       return jsonError(c, error);
@@ -259,6 +253,7 @@ async function installPackage(
   const settings = await setPluginSettings(db, {
     installed: [...rest, installed],
   });
+  invalidatePluginSettingsCache(db);
   return { settings, installed };
 }
 
@@ -364,6 +359,7 @@ pluginsStoreApi.delete("/:id", async (c) => {
       enabledPlugins: current.enabledPlugins.filter((entry) => entry !== id),
       disabledPlugins: current.disabledPlugins.filter((entry) => entry !== id),
     });
+    invalidatePluginSettingsCache(db);
     return c.json({ removed: true, id, installed: settings.installed });
   } catch (error) {
     return jsonError(c, error);

@@ -26,7 +26,7 @@ export function TrashSection({ onMutated }: { onMutated: () => void }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const projectsQuery = useQuery({
-    queryKey: ["projects", "trash"],
+    queryKey: queryKeys.projects.trash,
     queryFn: () => listProjects({ include_deleted: true }),
   });
   const tasksQuery = useQuery({
@@ -58,7 +58,7 @@ export function TrashSection({ onMutated }: { onMutated: () => void }) {
             !open && "-rotate-90 rtl:rotate-90",
           )}
         />
-        <span className="min-w-0 flex-1 truncate text-left">
+        <span className="min-w-0 flex-1 truncate text-start">
           {t("view.trash")}
         </span>
         {count > 0 && (
@@ -134,7 +134,7 @@ function TrashRow({
   const { t } = useI18n();
   const [pending, setPending] = useState(false);
   return (
-    <div className="group flex h-8 items-center gap-2 rounded-lg px-3 text-xs text-muted-foreground/80">
+    <div className="group flex h-8 items-center gap-2 rounded-lg px-3 text-xs text-muted-foreground">
       {icon}
       <span className="min-w-0 flex-1 truncate line-through">{label}</span>
       <Button

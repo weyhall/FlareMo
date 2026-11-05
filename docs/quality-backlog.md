@@ -101,3 +101,45 @@
 - 附件 R2 GC 四项加固、向量分区改造、备份演练脚本、部署流水线均已闭环。
 - 附件 R2 key 无路径穿越面；公开分享校验归属；PAT 撤销即时；bot webhook 鉴权；i18n zh/en 键零差异；无 console.log 残留。
 - composer 离线队列幂等；SW 离线壳/range 排除/SKIP_WAITING 握手正确。
+
+---
+
+## 2026-11-04 全量审计（第三轮）与修复台账
+
+本轮由 Lead + 三个只读审计员完成，覆盖 apps/web、apps/worker + packages、docs/scripts/deps。基线：`format:check`、`tsc`、Vitest（160 文件）、`scripts:test` 全绿；`pnpm audit --prod` 无已知漏洞。已修复项随本次提交落地，其余按下表继续跟踪。
+
+### 已修复（本轮）
+
+- [x] 自托管部署/更新 workflow 断链：模板恢复到 `docs/templates/workflows/`，README 8 语言 + AGENTS/ROADMAP/deploy/update/maintenance/release 文档同步（详见 CHANGELOG Unreleased）。
+- [x] 一键部署表单与 `wrangler.json` 冲突（issue #160 的技术根因）：移除空 var，文档补公开 origin / embedding 维度 / Repository 指向说明。
+- [x] 门禁口径有四种说法：统一为 7 步，`scripts/preflight.mjs` 是唯一口径。
+- [x] 英文 agent/deploy 文档要求部署前跑全量 verify：改为 opt-in。
+- [x] preflight 漏跑 2 个脚本测试、高风险脚本零测试：新增 `scripts:test` 自动发现 + 备份保留测试。
+- [x] `backups/` 无保留策略（55 目录 / 65MB，含 session 与 key 哈希）：drill 默认保留最近 10 次。
+- [x] cron 串行无隔离/无汇总：逐 pass try/catch + `scheduled maintenance complete` 汇总；文章清理加批次与逐行保护。
+- [x] 回收站清理 N+1：批量 owner 查询。
+- [x] PWA 推送 icon/badge 指向目录；更新提示缺「稍后」。
+- [x] trusted origins 允许 http；cookie 请求先查 session 再校验 Origin；admin 删除成员 PAT 失败路径吞错；plugins-store 重复 ownerContext。
+- [x] 快捷键劫持焦点控件的方向键/字母；语言包迟到不重渲染；spotlight 缺 combobox 语义。
+- [x] 死代码：`haptics`、`getDailyReview`；共享设置组件迁到 `components/settings-section.tsx`。
+- [x] 过期文档：maintenance 的 memory reindex、`run_worker_first`、`/capture` 残留、CHANGELOG 死小节。
+- [x] 依赖卫生：10 个死 override 清理、`minimumReleaseAge`、`engines`/`.nvmrc`。
+- [x] 跨仓漂移：flaremo-cloud README 免费档记忆配额与 ops-runbook 的 `memory_fts`。
+
+### 待办（按优先级）
+
+- [x] **PAT 权限面**：已实现 `notes` / `admin` scope（`packages/contracts/src/pat.ts`，Worker 在每个 PAT 请求上校验，`/api/app/admin/*` 仅 admin）、默认 90 天有效期（1–365 天，不再提供永不过期）、账户页创建对话框与令牌行展示 scope；旧令牌无 permissions 时保持完全访问以兼容既有脚本。
+- [x] **query key 收口**：86 处行内字面量全部迁到 `lib/query-keys.ts`（新增 20+ 组 key 与 `invalidateTaskSurfaces` 共享失效助手）；新增 `lib/query-keys.test.ts` 禁止再写行内字面量。
+- [x] **孤儿 i18n key**：71 个无引用 key 已从 8 个语言文件删除（1027 → 956 键）；新增 `i18n/usage.test.ts`，白名单只保留 10 个待接线的 `pwa.install*`/离线提示 key。
+- [x] **RTL 物理方向类**：32 个文件的 `text-left`/`ml-auto`/`right-*`/`border-l` 已改为逻辑类，toggle-group 分段控件的圆角与分隔线同步；`left-1/2 + -translate-x-1/2` 的居中保留物理方向（逻辑化会让 RTL 偏移半格）。
+- [x] **对比度（第一批）**：explorer 计数、可见性提示、月份表头、回收站分组等低强调正文改为全色 muted，tabs 非激活文字 /60 → /70；图标与装饰性 marker 保留，整体设计稿级重排仍待目检。
+- [x] **超大页面拆分（评估为暂不做）**：article-editor 691 / integrations-card 669 / daily-review 645 / memo-list 665 行。与既有的 `memos-connect-api.ts` 体量决定一致——纯搬代码没有行为收益，却会制造每次触碰这些页面的冲突面；改为「下次因功能改动必须编辑同一文件时顺手拆分」，不单独立项。
+- [x] **OpenAPI 响应级契约（第一批）**：新增 `memos-current-contract.test.ts`，用 contracts 的 zod schema 校验 `/api/v1/memos` create/list/get/attachments 的返回体；其余端点逐步扩展；`/api/app` 的 articles / projects / tasks 已补同类校验（`app-api-contract.test.ts`）。
+- [x] **admin 端点测试（第一、二批）**：插件商店鉴权/目录失败降级、`embeddings/rebuild` owner 守卫与未配置提示（`admin-endpoints.test.ts`）、PAT 删除成员的 R2 失败回归（`admin-member-removal.test.ts`）已覆盖；插件 install/uninstall 仍待补。
+- [x] **每写请求触发 outbox sweep（评估为保持现状）**：sweep 在 `waitUntil` 里、已经离开响应路径，固定成本是 2 次 D1 查询；改成时间窗节流会让低流量实例的 webhook/embedding 延迟从「秒级」变成「等下一次写或次日 cron」，取舍不划算。保留 cron 作为兜底。
+- [x] **每日全表重建小时计数（评估为保持现状）**：它是衍生计数的事实源，增量路径只是它的优化；自部署规模下一次全表 group-by 远低于 10ms CPU 上限。多租户 SaaS 行数明显增长后再改成「近 7 天活跃用户 + 低频全量」两段式。
+- [x] **首屏预加载碎片（评估为保持现状）**：43 个 modulepreload / 约 366KB gzip 在 HTTP/2-3 下是多路复用而非串行瀑布，没有实测 LCP 退化；`vite.config.ts` 已按 React/TipTap/浮动层等大块分组。等有真实性能数据再动，避免为数字而拆包。
+- [x] **浏览器直连 api.github.com**：更新检查已改走 Worker 代理 `/api/app/releases/latest`（边缘缓存 10 分钟、repository 形状校验、上游失败 502）。
+- [ ] **依赖升级（持续性维护，非缺陷）**：`pnpm outdated` 20+ 个直接依赖落后；没有 CI 的情况下批量升级需要人工回归，按季度在功能空档做，并先跑定向 vitest + `pnpm build`。本轮只做了死 override 清理与 `minimumReleaseAge` 策略。
+- [x] **产品任务池未拆 issue（评估为保持现状）**：维护者是单人快速迭代节奏，`ROADMAP.md` 的「公开任务池」就是工作队列；GitHub issue 只在有外部反馈（如 #160）时开，避免双份看板。
+- [x] **历史设计文档归档（第一批）**：新增 `docs/README.md` 索引，一次性设计稿/审查报告统一标记为「历史」并在索引里单列；暂不移动文件，避免破坏既有链接。

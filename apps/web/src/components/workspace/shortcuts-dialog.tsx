@@ -29,13 +29,13 @@ export function ShortcutsDialog({
             [
               ["shortcuts.search", "⌘K / /"],
               ["shortcuts.composer", "C"],
-              ["shortcuts.linebreak", "Enter"],
-              ["shortcuts.send", "Shift + Enter"],
+              ["shortcuts.linebreak", "Enter / ⇧Enter"],
+              ["shortcuts.send", "⌘Enter"],
               ["shortcuts.saveEdit", "⌘Enter"],
+              ["shortcuts.sidebar", "⌘\\"],
               ["shortcuts.theme", "D"],
               ["shortcuts.cancel", "Esc"],
               ["shortcuts.help", "?"],
-              ["shortcuts.capture", "Enter (on /capture)"],
             ] as const
           ).map(([key, combo]) => (
             <div
